@@ -51,6 +51,9 @@ logger = logging.getLogger('audio-analyzer')
 ESSENTIA_AVAILABLE = False
 try:
     import essentia
+    # Suppress Essentia's internal "No network created" warnings that spam logs
+    essentia.log.warningActive = False
+    essentia.log.infoActive = False
     import essentia.standard as es
     ESSENTIA_AVAILABLE = True
 except ImportError as e:
