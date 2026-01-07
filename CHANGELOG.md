@@ -5,6 +5,31 @@ All notable changes to Lidify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2025-01-07
+
+### Fixed
+- Mobile scrolling blocked by pull-to-refresh component
+- Pull-to-refresh component temporarily disabled (will be properly fixed in v1.4)
+
+### Technical Details
+- Root cause: CSS flex chain break (`h-full`) and touch event interference
+- Implemented early return to bypass problematic wrapper while preserving child rendering
+- TODO: Re-enable in v1.4 with proper CSS fix (`flex-1 flex flex-col min-h-0`)
+
+## [1.3.1] - 2025-01-07
+
+### Fixed
+- Production database schema mismatch causing SystemSettings endpoints to fail
+- Added missing `downloadSource` and `primaryFailureFallback` columns to SystemSettings table
+
+### Database Migrations
+- `20260107000000_add_download_source_columns` - Idempotent migration adds missing columns with defaults
+
+### Technical Details
+- Root cause: Migration gap between squashed init migration and production database setup
+- Uses PostgreSQL IF NOT EXISTS pattern for safe deployment across all environments
+- Default values: `downloadSource='soulseek'`, `primaryFailureFallback='none'`
+
 ## [1.3.0] - 2026-01-06
 
 ### Added

@@ -13,6 +13,11 @@ export function PullToRefresh({
     children,
     threshold = 80,
 }: PullToRefreshProps) {
+    // HOTFIX v1.3.2: Temporarily disabled - blocking mobile scrolling
+    // TODO: Fix in v1.4 - Issues: 1) h-full breaks flex layout, 2) touch handlers may interfere
+    // Proper fix: Change line 90 className to "relative flex-1 flex flex-col min-h-0"
+    return <>{children}</>;
+
     const [pullDistance, setPullDistance] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const startY = useRef(0);

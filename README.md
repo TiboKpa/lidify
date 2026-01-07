@@ -14,7 +14,7 @@ Lidify is built for music lovers who want the convenience of streaming services 
 
 ## A Note on Native Apps
 
-I got a little and PWA are the priority. Once the core experience is solid and properly tested, a native mobile app (likely React Native) is on the roadmap. The PWA works great for most cases for now.
+Once the core experience is solid and properly tested, a native mobile app (likely React Native) is on the roadmap. The PWA works great for most cases for now.
 
 Thanks for your patience while I work through this.
 
@@ -45,6 +45,7 @@ Thanks for your patience while I work through this.
 -   **Stream your library** - FLAC, MP3, AAC, OGG, and other common formats work out of the box
 -   **Automatic cataloging** - Lidify scans your library and enriches it with metadata from MusicBrainz and Last.fm
 -   **Audio transcoding** - Stream at original quality or transcode on-the-fly (320kbps, 192kbps, or 128kbps)
+-   **Ultra-wide support** - Library grid scales up to 8 columns on large displays
 
 <p align="center">
   <img src="assets/screenshots/desktop-library.png" alt="Library View" width="800">
@@ -66,6 +67,8 @@ Thanks for your patience while I work through this.
     -   Dynamic genre and decade stations generated from your library
 -   **Discover Weekly** - Weekly playlists of new music tailored to your listening habits (requires Lidarr)
 -   **Artist recommendations** - Find similar artists based on what you already love
+-   **Artist name resolution** - Smart alias lookup via Last.fm (e.g., "of mice" → "Of Mice & Men")
+-   **Discography sorting** - Sort artist albums by year or date added
 -   **Deezer previews** - Preview tracks you don't own before adding them to your library
 -   **Vibe matching** - Find tracks that match your current mood (see [The Vibe System](#the-vibe-system))
 
@@ -74,6 +77,7 @@ Thanks for your patience while I work through this.
 -   **Subscribe via RSS** - Search iTunes for podcasts and subscribe directly
 -   **Track progress** - Pick up where you left off across devices
 -   **Episode management** - Browse episodes, mark as played, and manage your subscriptions
+-   **Mobile skip buttons** - Jump ±30 seconds on mobile for easy navigation
 
 <p align="center">
   <img src="assets/screenshots/desktop-podcasts.png" alt="Podcasts" width="800">
@@ -84,6 +88,7 @@ Thanks for your patience while I work through this.
 -   **Audiobookshelf integration** - Connect your existing Audiobookshelf instance
 -   **Unified experience** - Browse and listen to audiobooks alongside your music
 -   **Progress sync** - Your listening position syncs with Audiobookshelf
+-   **Mobile skip buttons** - Jump ±30 seconds on mobile for easy chapter navigation
 
 <p align="center">
   <img src="assets/screenshots/desktop-audiobooks.png" alt="Audiobooks" width="800">
@@ -172,7 +177,7 @@ Lidify works as a PWA on mobile devices, giving you a native app-like experience
 
 -   Full streaming functionality
 -   Background audio playback
--   Lock screen / notification media controls (via Media Session API)
+-   Lock screen and notification media controls (iOS Control Center and Android notifications)
 -   Offline caching for faster loads
 -   Installable icon on home screen
 
@@ -310,12 +315,17 @@ docker pull chevron7locked/lidify:nightly
 
 The unified Lidify container handles most configuration automatically. Here are the available options:
 
-| Variable              | Default                            | Description                                                                 |
-| --------------------- | ---------------------------------- | --------------------------------------------------------------------------- |
-| `SESSION_SECRET`      | Auto-generated                     | Session encryption key (recommended to set for persistence across restarts) |
-| `TZ`                  | `UTC`                              | Timezone for the container                                                  |
-| `LIDIFY_CALLBACK_URL` | `http://host.docker.internal:3030` | URL for Lidarr webhook callbacks (see [Lidarr integration](#lidarr))        |
-| `NUM_WORKERS`         | `2`                                | Number of parallel workers for audio analysis                               |
+| Variable                            | Default                            | Description                                                                 |
+| ----------------------------------- | ---------------------------------- | --------------------------------------------------------------------------- |
+| `SESSION_SECRET`                    | Auto-generated                     | Session encryption key (recommended to set for persistence across restarts) |
+| `SETTINGS_ENCRYPTION_KEY`           | Required                           | Encryption key for stored credentials (generate with `openssl rand -base64 32`) |
+| `TZ`                                | `UTC`                              | Timezone for the container                                                  |
+| `PORT`                              | `3030`                             | Port to access Lidify                                                       |
+| `LIDIFY_CALLBACK_URL`               | `http://host.docker.internal:3030` | URL for Lidarr webhook callbacks (see [Lidarr integration](#lidarr))        |
+| `AUDIO_ANALYSIS_WORKERS`            | `2`                                | Number of parallel workers for audio analysis (1-8)                         |
+| `AUDIO_ANALYSIS_THREADS_PER_WORKER` | `1`                                | Threads per worker for TensorFlow/FFT operations (1-4)                      |
+| `LOG_LEVEL`                         | `warn` (prod) / `debug` (dev)      | Logging verbosity: debug, info, warn, error, silent                         |
+| `DOCS_PUBLIC`                       | `false`                            | Set to `true` to allow public access to API docs in production              |
 
 The music library path is configured via Docker volume mount (`-v /path/to/music:/music`).
 
@@ -344,13 +354,31 @@ Lidify uses several sensitive environment variables. Never commit your `.env` fi
 | Variable                  | Purpose                        | Required          |
 | ------------------------- | ------------------------------ | ----------------- |
 | `SESSION_SECRET`          | Session encryption (32+ chars) | Yes               |
-| `SETTINGS_ENCRYPTION_KEY` | Encrypts stored credentials    | Recommended       |
+| `SETTINGS_ENCRYPTION_KEY` | Encrypts stored credentials    | Yes               |
 | `SOULSEEK_USERNAME`       | Soulseek login                 | If using Soulseek |
 | `SOULSEEK_PASSWORD`       | Soulseek password              | If using Soulseek |
 | `LIDARR_API_KEY`          | Lidarr integration             | If using Lidarr   |
 | `OPENAI_API_KEY`          | AI features                    | Optional          |
 | `LASTFM_API_KEY`          | Artist recommendations         | Optional          |
 | `FANART_API_KEY`          | Artist images                  | Optional          |
+
+### Authentication & Session Security
+
+-   **JWT tokens** - Access tokens expire after 24 hours; refresh tokens after 30 days
+-   **Token refresh** - Automatic token refresh via `/api/auth/refresh` endpoint
+-   **Password changes** - Changing your password invalidates all existing sessions
+-   **Session cookies** - Secured with `httpOnly`, `sameSite=strict`, and `secure` (in production)
+-   **Encryption validation** - Encryption key is validated on startup to prevent insecure defaults
+
+### Webhook Security
+
+-   **Lidarr webhooks** - Support signature verification with configurable secret
+-   Configure the webhook secret in Settings → Lidarr for additional security
+
+### Admin Dashboard Security
+
+-   **Bull Board** - Job queue dashboard at `/admin/queues` requires authenticated admin user
+-   **API Documentation** - Swagger docs at `/api-docs` require authentication in production (unless `DOCS_PUBLIC=true`)
 
 ### VPN Configuration (Optional)
 
@@ -367,7 +395,7 @@ If using Mullvad VPN for Soulseek:
 openssl rand -base64 32
 
 # Generate encryption key
-openssl rand -hex 32
+openssl rand -base64 32
 ```
 
 ### Network Security
@@ -389,7 +417,7 @@ Connect Lidify to your Lidarr instance to request and download new music directl
 **What you get:**
 
 -   Browse artists and albums you don't own
--               Request downloads with a single click
+-                 Request downloads with a single click
 -   Discover Weekly playlists that automatically download new recommendations
 -   Automatic library sync when Lidarr finishes importing
 
@@ -601,6 +629,22 @@ Administrators have access to additional settings:
 -   **Cache Management** - Clear caches if needed
 -   **Advanced** - Download retry settings, concurrent download limits
 
+### Download Settings
+
+Configure how Lidify acquires new music in Settings → Downloads:
+
+-   **Primary Source** - Choose between Soulseek or Lidarr as your main download source
+-   **Fallback Behavior** - Optionally fall back to the other source if the primary fails
+-   **Stale Job Cleanup** - Clear stuck Discovery batches and downloads that aren't progressing
+
+### Enrichment Settings
+
+Control metadata enrichment in Settings → Cache & Automation:
+
+-   **Enrichment Speed** - Adjust concurrency (1-5x) to balance speed vs. system load
+-   **Failure Notifications** - Get notified when enrichment fails for specific items
+-   **Retry/Skip Modal** - Choose to retry failed items or skip them to continue processing
+
 ### Activity Panel
 
 The Activity Panel provides real-time visibility into downloads and system events:
@@ -619,7 +663,16 @@ For programmatic access to Lidify:
 2. Generate a new key with a descriptive name
 3. Use the key in the `Authorization` header: `Bearer YOUR_API_KEY`
 
-API documentation is available at `/api-docs` when the backend is running.
+API documentation is available at `/api-docs` when the backend is running (requires authentication in production).
+
+### Bull Board Dashboard
+
+Monitor background job queues at `/admin/queues`:
+
+-   View active, waiting, completed, and failed jobs
+-   Retry or remove stuck jobs
+-   Monitor download progress and enrichment tasks
+-   Requires admin authentication
 
 ---
 
