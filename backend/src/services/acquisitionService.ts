@@ -113,8 +113,7 @@ class AcquisitionService {
 
         // Get download source settings
         const downloadSource = settings?.downloadSource || "soulseek";
-        const primaryFailureFallback =
-            settings?.primaryFailureFallback || "none";
+        const primaryFailureFallback = settings?.primaryFailureFallback;
 
         // Determine actual availability
         const hasSoulseek = await soulseekService.isAvailable();
@@ -184,8 +183,9 @@ class AcquisitionService {
             primaryFailureFallback !== "none" &&
             primaryFailureFallback === alternative;
 
-        // Auto-fallback: If both sources available and no explicit fallback set, enable it
-        if (!useFallback && primaryFailureFallback === "none") {
+        // Only auto-enable fallback if the setting is truly undefined/null (first-time users)
+        // "none" = explicit "Skip Track" choice, respect it (Fixes #68)
+        if (!useFallback && (primaryFailureFallback === undefined || primaryFailureFallback === null)) {
             useFallback = true;
             logger.debug(
                 `[Acquisition] Auto-enabled fallback: ${alternative} (both sources configured)`

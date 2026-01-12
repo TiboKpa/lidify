@@ -73,10 +73,10 @@ export function useSoulseekSearch({
 
                 // Poll for results - limit to 5 for inline display
                 let pollCount = 0;
-                const maxPolls = 10;
+                const maxPolls = 30; // Poll for up to 90 seconds
 
-                // Wait 3 seconds before starting to poll
-                await new Promise((resolve) => setTimeout(resolve, 3000));
+                // Wait 5 seconds before starting to poll (Soulseek is slow)
+                await new Promise((resolve) => setTimeout(resolve, 5000));
                 setIsSoulseekSearching(false); // Initial search request complete
 
                 pollInterval = setInterval(async () => {
@@ -87,11 +87,16 @@ export function useSoulseekSearch({
 
                         if (results && results.length > 0) {
                             setSoulseekResults(results);
+                            // If we have enough results, we can stop polling early
+                            if (results.length >= 10) {
+                                if (pollInterval) clearInterval(pollInterval);
+                                setIsSoulseekPolling(false);
+                            }
                         }
 
                         pollCount++;
 
-                        if (results.length >= 5 || pollCount >= maxPolls) {
+                        if (pollCount >= maxPolls) {
                             if (pollInterval) clearInterval(pollInterval);
                             setIsSoulseekPolling(false);
                         }
@@ -101,9 +106,12 @@ export function useSoulseekSearch({
                         setIsSoulseekPolling(false);
                     }
                 }, 2000);
-            } catch (error: any) {
+            } catch (error) {
                 console.error("Soulseek search error:", error);
-                if (error.message?.includes("not enabled")) {
+                if (
+                    error instanceof Error &&
+                    error.message?.includes("not enabled")
+                ) {
                     setSoulseekEnabled(false);
                 }
                 setIsSoulseekSearching(false);
@@ -152,9 +160,10 @@ export function useSoulseekSearch({
                     return newSet;
                 });
             }, 5000);
-        } catch (error: any) {
+        } catch (error) {
             console.error("Download error:", error);
-            toast.error(error.message || "Failed to start download");
+            const message = error instanceof Error ? error.message : "Failed to start download";
+            toast.error(message);
             setDownloadingFiles((prev) => {
                 const newSet = new Set(prev);
                 newSet.delete(result.filename);

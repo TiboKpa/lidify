@@ -144,6 +144,7 @@ def _get_auto_workers() -> int:
     return auto_workers
 
 
+
 def _get_workers_from_db() -> int:
     """
     Fetch worker count from SystemSettings table.
@@ -188,7 +189,7 @@ ESSENTIA_VERSION = '2.1b6-enhanced-v2'
 
 # Retry configuration
 MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))  # Max retry attempts per track
-STALE_PROCESSING_MINUTES = int(os.getenv('STALE_PROCESSING_MINUTES', '10'))  # Reset tracks stuck in 'processing'
+STALE_PROCESSING_MINUTES = int(os.getenv('STALE_PROCESSING_MINUTES', '15'))  # Reset tracks stuck in 'processing' (synchronized with backend)
 
 # Queue names
 ANALYSIS_QUEUE = 'audio:analysis:queue'
@@ -1473,9 +1474,9 @@ class AnalysisWorker:
         
         futures = {self.executor.submit(_analyze_track_in_process, t): t for t in tracks}
         
-        for future in as_completed(futures, timeout=300):  # 5 min timeout per batch
+        for future in as_completed(futures, timeout=900):  # 15 min timeout per batch (increased from 5 min to handle hi-res files)
             try:
-                track_id, file_path, features = future.result(timeout=60)  # 1 min per track
+                track_id, file_path, features = future.result(timeout=180)  # 3 min per track (increased from 1 min for hi-res FLAC)
                 
                 if features.get('_error'):
                     self._save_failed(track_id, features['_error'])

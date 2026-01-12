@@ -7,7 +7,12 @@ import speakeasy from "speakeasy";
 import QRCode from "qrcode";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import { requireAuth, requireAdmin, generateToken, generateRefreshToken } from "../middleware/auth";
+import {
+    requireAuth,
+    requireAdmin,
+    generateToken,
+    generateRefreshToken,
+} from "../middleware/auth";
 import { encrypt, decrypt } from "../utils/encryption";
 
 const router = Router();
@@ -59,18 +64,23 @@ const decrypt2FASecret = decrypt;
 // POST /auth/login
 router.post("/login", async (req, res) => {
     try {
+        logger.debug(`[AUTH] Login attempt for user: ${req.body?.username}`);
         const { username, password } = loginSchema.parse(req.body);
         const { token } = req.body; // 2FA token if provided
 
         const user = await prisma.user.findUnique({ where: { username } });
         if (!user) {
+            logger.debug(`[AUTH] User not found: ${username}`);
             return res.status(401).json({ error: "Invalid credentials" });
         }
 
+        logger.debug(`[AUTH] Verifying password for user: ${username}`);
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) {
+            logger.debug(`[AUTH] Invalid password for user: ${username}`);
             return res.status(401).json({ error: "Invalid credentials" });
         }
+        logger.debug(`[AUTH] Password verified for user: ${username}`);
 
         // Check if 2FA is enabled
         if (user.twoFactorEnabled && user.twoFactorSecret) {
@@ -97,13 +107,19 @@ router.post("/login", async (req, res) => {
 
                 const codeIndex = hashedCodes.indexOf(providedHash);
                 if (codeIndex === -1) {
-                    return res.status(401).json({ error: "Invalid recovery code" });
+                    return res
+                        .status(401)
+                        .json({ error: "Invalid recovery code" });
                 }
 
                 hashedCodes.splice(codeIndex, 1);
                 await prisma.user.update({
                     where: { id: user.id },
-                    data: { twoFactorRecoveryCodes: encrypt2FASecret(hashedCodes.join(",")) },
+                    data: {
+                        twoFactorRecoveryCodes: encrypt2FASecret(
+                            hashedCodes.join(",")
+                        ),
+                    },
                 });
             } else {
                 // Verify TOTP token
@@ -144,7 +160,9 @@ router.post("/login", async (req, res) => {
         });
     } catch (err) {
         if (err instanceof z.ZodError) {
-            return res.status(400).json({ error: "Invalid request", details: err.errors });
+            return res
+                .status(400)
+                .json({ error: "Invalid request", details: err.errors });
         }
         logger.error("Login error:", err);
         res.status(500).json({ error: "Internal error" });
@@ -161,38 +179,46 @@ router.post("/logout", (req, res) => {
 // POST /auth/refresh - Refresh access token using refresh token
 router.post("/refresh", async (req, res) => {
     const { refreshToken } = req.body;
-    
+
     if (!refreshToken) {
         return res.status(400).json({ error: "Refresh token required" });
     }
-    
+
     try {
-        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET || process.env.SESSION_SECRET!) as any;
-        
+        const decoded = jwt.verify(
+            refreshToken,
+            process.env.JWT_SECRET || process.env.SESSION_SECRET!
+        ) as any;
+
         if (decoded.type !== "refresh") {
             return res.status(401).json({ error: "Invalid refresh token" });
         }
-        
+
         const user = await prisma.user.findUnique({
             where: { id: decoded.userId },
-            select: { id: true, username: true, role: true, tokenVersion: true }
+            select: {
+                id: true,
+                username: true,
+                role: true,
+                tokenVersion: true,
+            },
         });
-        
+
         if (!user) {
             return res.status(401).json({ error: "User not found" });
         }
-        
+
         // Validate tokenVersion
         if (decoded.tokenVersion !== user.tokenVersion) {
             return res.status(401).json({ error: "Token invalidated" });
         }
-        
+
         const newAccessToken = generateToken(user);
         const newRefreshToken = generateRefreshToken(user);
-        
+
         return res.json({
             token: newAccessToken,
-            refreshToken: newRefreshToken
+            refreshToken: newRefreshToken,
         });
     } catch (error) {
         return res.status(401).json({ error: "Invalid refresh token" });
@@ -281,7 +307,7 @@ router.post("/change-password", requireAuth, async (req, res) => {
             where: { id: req.user!.id },
             data: {
                 passwordHash: newPasswordHash,
-                tokenVersion: { increment: 1 }
+                tokenVersion: { increment: 1 },
             },
         });
 

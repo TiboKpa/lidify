@@ -202,12 +202,15 @@ class ApiClient {
         }
 
         try {
-            const response = await fetch(`${this.getBaseUrl()}/api/auth/refresh`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ refreshToken }),
-                credentials: "include",
-            });
+            const response = await fetch(
+                `${this.getBaseUrl()}/api/auth/refresh`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ refreshToken }),
+                    credentials: "include",
+                }
+            );
 
             if (!response.ok) {
                 // Refresh token invalid or expired - clear tokens
@@ -216,13 +219,13 @@ class ApiClient {
             }
 
             const data = await response.json();
-            
+
             // Store new tokens
             if (data.token) {
                 this.setToken(data.token, data.refreshToken);
                 return true;
             }
-            
+
             this.clearToken();
             return false;
         } catch (error) {
@@ -238,7 +241,10 @@ class ApiClient {
      */
     async request<T>(
         endpoint: string,
-        options: RequestInit & { silent404?: boolean; _retryCount?: number } = {}
+        options: RequestInit & {
+            silent404?: boolean;
+            _retryCount?: number;
+        } = {}
     ): Promise<T> {
         const { silent404, _retryCount = 0, ...fetchOptions } = options;
         const headers: HeadersInit = {
@@ -273,10 +279,14 @@ class ApiClient {
             }
 
             // Handle 401 with token refresh (retry once)
-            if (response.status === 401 && _retryCount === 0 && endpoint !== "/auth/refresh") {
+            if (
+                response.status === 401 &&
+                _retryCount === 0 &&
+                endpoint !== "/auth/refresh"
+            ) {
                 console.log("[API] 401 error - attempting token refresh");
                 const refreshed = await this.refreshAccessToken();
-                
+
                 if (refreshed) {
                     console.log("[API] Token refreshed - retrying request");
                     // Retry the request with new token
@@ -285,8 +295,10 @@ class ApiClient {
                         _retryCount: 1, // Prevent infinite loops
                     });
                 }
-                
-                console.log("[API] Token refresh failed - user needs to re-login");
+
+                console.log(
+                    "[API] Token refresh failed - user needs to re-login"
+                );
             }
 
             if (response.status === 401) {
@@ -1274,16 +1286,16 @@ class ApiClient {
         );
     }
 
-    // Slskd (Soulseek) - P2P Music Search & Download
+    // Soulseek - P2P Music Search & Download
     async getSlskdStatus() {
         return this.request<{ connected: boolean; username?: string }>(
-            "/slskd/status"
+            "/soulseek/status"
         );
     }
 
     async searchSoulseek(query: string) {
         return this.request<{ searchId: string; message: string }>(
-            "/slskd/search",
+            "/soulseek/search",
             {
                 method: "POST",
                 body: JSON.stringify({ query }),
@@ -1293,7 +1305,7 @@ class ApiClient {
 
     async getSoulseekResults(searchId: string) {
         return this.request<{ results: any[]; count: number }>(
-            `/slskd/search/${searchId}`
+            `/soulseek/search/${searchId}`
         );
     }
 
@@ -1309,7 +1321,7 @@ class ApiClient {
             success: boolean;
             message: string;
             filename: string;
-        }>("/slskd/download", {
+        }>("/soulseek/download", {
             method: "POST",
             body: JSON.stringify({
                 username,
@@ -1324,7 +1336,7 @@ class ApiClient {
 
     async getSlskdDownloads() {
         return this.request<{ downloads: any[]; count: number }>(
-            "/slskd/downloads"
+            "/soulseek/downloads"
         );
     }
 
@@ -1483,6 +1495,30 @@ class ApiClient {
             "/enrichment/full",
             { method: "POST" }
         );
+    }
+
+    async resetArtistsOnly() {
+        return this.request<{
+            message: string;
+            description: string;
+            count: number;
+        }>("/enrichment/reset-artists", { method: "POST" });
+    }
+
+    async resetMoodTagsOnly() {
+        return this.request<{
+            message: string;
+            description: string;
+            count: number;
+        }>("/enrichment/reset-mood-tags", { method: "POST" });
+    }
+
+    async resetAudioAnalysisOnly() {
+        return this.request<{
+            message: string;
+            description: string;
+            count: number;
+        }>("/enrichment/reset-audio-analysis", { method: "POST" });
     }
 
     async updateArtistMetadata(

@@ -2,15 +2,15 @@ import { prisma } from "../utils/db";
 import { logger } from "../utils/logger";
 import { enrichmentFailureService } from "./enrichmentFailureService";
 
-const STALE_THRESHOLD_MINUTES = 5;
+const STALE_THRESHOLD_MINUTES = 15; // Synchronized with Python analyzer (STALE_PROCESSING_MINUTES)
 const MAX_RETRIES = 3;
 const CIRCUIT_BREAKER_THRESHOLD = 30; // Increased from 10 to handle batch operations
 const CIRCUIT_BREAKER_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 
-type CircuitState = 'closed' | 'open' | 'half-open';
+type CircuitState = "closed" | "open" | "half-open";
 
 class AudioAnalysisCleanupService {
-    private state: CircuitState = 'closed';
+    private state: CircuitState = "closed";
     private failureCount = 0;
     private lastFailureTime: Date | null = null;
 
@@ -27,14 +27,14 @@ class AudioAnalysisCleanupService {
      * Handle successful operation - close circuit if in half-open state
      */
     private onSuccess(): void {
-        if (this.state === 'half-open') {
+        if (this.state === "half-open") {
             logger.info(
                 `[AudioAnalysisCleanup] Circuit breaker CLOSED - recovery successful after ${this.failureCount} failures`
             );
-            this.state = 'closed';
+            this.state = "closed";
             this.failureCount = 0;
             this.lastFailureTime = null;
-        } else if (this.state === 'closed' && this.failureCount > 0) {
+        } else if (this.state === "closed" && this.failureCount > 0) {
             // Reset failure counter on success while closed
             logger.debug(
                 "[AudioAnalysisCleanup] Resetting failure counter on success"
@@ -47,20 +47,23 @@ class AudioAnalysisCleanupService {
     /**
      * Handle failed operation - update state and counts
      */
-    private onFailure(resetCount: number, permanentlyFailedCount: number): void {
+    private onFailure(
+        resetCount: number,
+        permanentlyFailedCount: number
+    ): void {
         const totalFailures = resetCount + permanentlyFailedCount;
         this.failureCount += totalFailures;
         this.lastFailureTime = new Date();
 
-        if (this.state === 'half-open') {
+        if (this.state === "half-open") {
             // Failed during half-open - reopen circuit
-            this.state = 'open';
+            this.state = "open";
             logger.warn(
                 `[AudioAnalysisCleanup] Circuit breaker REOPENED - recovery attempt failed (${this.failureCount} total failures)`
             );
         } else if (this.failureCount >= CIRCUIT_BREAKER_THRESHOLD) {
             // Exceeded threshold - open circuit
-            this.state = 'open';
+            this.state = "open";
             logger.warn(
                 `[AudioAnalysisCleanup] Circuit breaker OPEN - ${this.failureCount} failures in window. ` +
                     `Pausing audio analysis queuing until analyzer shows signs of life.`
@@ -73,15 +76,15 @@ class AudioAnalysisCleanupService {
      * Automatically transitions to half-open after cooldown period
      */
     isCircuitOpen(): boolean {
-        if (this.state === 'open' && this.shouldAttemptReset()) {
-            this.state = 'half-open';
+        if (this.state === "open" && this.shouldAttemptReset()) {
+            this.state = "half-open";
             logger.info(
                 `[AudioAnalysisCleanup] Circuit breaker HALF-OPEN - attempting recovery after ${
                     CIRCUIT_BREAKER_WINDOW_MS / 60000
                 } minute cooldown`
             );
         }
-        return this.state === 'open';
+        return this.state === "open";
     }
 
     /**
@@ -222,7 +225,7 @@ class AudioAnalysisCleanupService {
             processing,
             completed,
             failed,
-            circuitOpen: this.state === 'open',
+            circuitOpen: this.state === "open",
             circuitState: this.state,
             failureCount: this.failureCount,
         };

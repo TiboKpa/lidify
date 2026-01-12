@@ -55,6 +55,11 @@ services:
             interval: 30s
             timeout: 10s
             retries: 3
+        networks:
+            default:
+                aliases:
+                    - backend
+                    - lidify_backend
 
     # Frontend Web UI - Your Lidify Next.js app
     frontend:
@@ -248,7 +253,7 @@ services:
             resources:
                 limits:
                     memory: 6G
-                    cpus: '4'
+                    cpus: "4"
                 reservations:
                     memory: 2G
         # Disabled by default - enable when needed

@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
-import { Home, Search, Settings, RefreshCw, Power, Menu, Bell } from "lucide-react";
+import {
+    Home,
+    Search,
+    Settings,
+    RefreshCw,
+    Power,
+    Menu,
+    Bell,
+} from "lucide-react";
 import { ActivityPanelToggle } from "./ActivityPanel";
 import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
@@ -14,6 +22,7 @@ import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 import { useAuth } from "@/lib/auth-context";
 import { useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
+import { APP_VERSION } from "@/lib/version";
 
 export function TopBar() {
     const pathname = usePathname();
@@ -33,7 +42,9 @@ export function TopBar() {
         onComplete: () => {
             // Refresh Activity Panel and enrichment progress after scan
             queryClient.invalidateQueries({ queryKey: ["notifications"] });
-            queryClient.invalidateQueries({ queryKey: ["enrichment-progress"] });
+            queryClient.invalidateQueries({
+                queryKey: ["enrichment-progress"],
+            });
             setScanJobId(null);
         },
         onError: () => {
@@ -47,8 +58,9 @@ export function TopBar() {
     // Only use API-driven state for the icon
     // pendingDownloads is optimistic local state that can become stale
     const hasActiveDownloads = downloadStatus.hasActiveDownloads;
-    const hasPendingUploads = pendingDownloads.length > 0 &&
-        pendingDownloads.some(p => Date.now() - p.timestamp < 30000); // Only count recent pending
+    const hasPendingUploads =
+        pendingDownloads.length > 0 &&
+        pendingDownloads.some((p) => Date.now() - p.timestamp < 30000); // Only count recent pending
     const hasFailedDownloads = downloadStatus.failedDownloads.length > 0;
 
     const handleSync = async () => {
@@ -144,7 +156,9 @@ export function TopBar() {
             className="fixed top-0 left-0 right-0 bg-black flex items-center px-3 z-50"
             style={{
                 height: isMobileOrTablet ? "58px" : "64px",
-                paddingTop: isMobileOrTablet ? "env(safe-area-inset-top)" : undefined,
+                paddingTop: isMobileOrTablet
+                    ? "env(safe-area-inset-top)"
+                    : undefined,
             }}
         >
             {/* Mobile/Tablet Layout: Hamburger + Home + Search + Bell */}
@@ -189,9 +203,7 @@ export function TopBar() {
                             <input
                                 type="text"
                                 value={searchQuery}
-                                onChange={(e) =>
-                                    setSearchQuery(e.target.value)
-                                }
+                                onChange={(e) => setSearchQuery(e.target.value)}
                                 placeholder="Search..."
                                 aria-label="Search"
                                 autoCapitalize="none"
@@ -237,6 +249,9 @@ export function TopBar() {
                                 Lidify
                             </span>
                         </Link>
+                        <span className="ml-2 px-1.5 py-0.5 text-[10px] font-medium text-white/40 bg-white/5 rounded border border-white/10">
+                            v{APP_VERSION}
+                        </span>
                     </div>
 
                     {/* Center - Home & Search */}

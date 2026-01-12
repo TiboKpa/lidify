@@ -99,7 +99,8 @@ app.use(express.json({ limit: "1mb" })); // Increased from 100KB default to supp
 
 // Session
 // Trust proxy for reverse proxy setups (nginx, traefik, etc.)
-app.set("trust proxy", 1);
+// Set to true to trust all proxies in the chain (common in Docker/Portainer setups)
+app.set("trust proxy", true);
 
 app.use(
     session({
@@ -169,9 +170,10 @@ app.get("/api/health", (req, res) => {
 // Swagger API Documentation
 // In production: require auth unless DOCS_PUBLIC=true
 // In development: always public for easier testing
-const docsMiddleware = config.nodeEnv === "production" && process.env.DOCS_PUBLIC !== "true"
-    ? [requireAuth]
-    : [];
+const docsMiddleware =
+    config.nodeEnv === "production" && process.env.DOCS_PUBLIC !== "true"
+        ? [requireAuth]
+        : [];
 
 app.use(
     "/api/docs",
@@ -199,10 +201,12 @@ async function checkPostgresConnection() {
     } catch (error) {
         logger.error("✗ PostgreSQL connection failed:", {
             error: error instanceof Error ? error.message : String(error),
-            databaseUrl: config.databaseUrl?.replace(/:[^:@]+@/, ':***@') // Hide password
+            databaseUrl: config.databaseUrl?.replace(/:[^:@]+@/, ":***@"), // Hide password
         });
         logger.error("Unable to connect to PostgreSQL. Please ensure:");
-        logger.error("  1. PostgreSQL is running on the correct port (default: 5433)");
+        logger.error(
+            "  1. PostgreSQL is running on the correct port (default: 5433)"
+        );
         logger.error("  2. DATABASE_URL in .env is correct");
         logger.error("  3. Database credentials are valid");
         process.exit(1);
@@ -214,19 +218,23 @@ async function checkRedisConnection() {
         // Check if Redis client is actually connected
         // The redis client has automatic reconnection, so we need to check status first
         if (!redisClient.isReady) {
-            throw new Error("Redis client is not ready - connection failed or still connecting");
+            throw new Error(
+                "Redis client is not ready - connection failed or still connecting"
+            );
         }
-        
+
         // If connected, verify with ping
         await redisClient.ping();
         logger.debug("✓ Redis connection verified");
     } catch (error) {
         logger.error("✗ Redis connection failed:", {
             error: error instanceof Error ? error.message : String(error),
-            redisUrl: config.redisUrl?.replace(/:[^:@]+@/, ':***@') // Hide password if any
+            redisUrl: config.redisUrl?.replace(/:[^:@]+@/, ":***@"), // Hide password if any
         });
         logger.error("Unable to connect to Redis. Please ensure:");
-        logger.error("  1. Redis is running on the correct port (default: 6380)");
+        logger.error(
+            "  1. Redis is running on the correct port (default: 6380)"
+        );
         logger.error("  2. REDIS_URL in .env is correct");
         process.exit(1);
     }
@@ -276,8 +284,15 @@ app.listen(config.port, "0.0.0.0", async () => {
         serverAdapter,
     });
 
-    app.use("/api/admin/queues", requireAuth, requireAdmin, serverAdapter.getRouter());
-    logger.debug("Bull Board dashboard available at /api/admin/queues (admin-only)");
+    app.use(
+        "/api/admin/queues",
+        requireAuth,
+        requireAdmin,
+        serverAdapter.getRouter()
+    );
+    logger.debug(
+        "Bull Board dashboard available at /api/admin/queues (admin-only)"
+    );
 
     // Note: Native library scanning is now triggered manually via POST /library/scan
     // No automatic sync on startup - user must manually scan their music folder
@@ -317,11 +332,16 @@ app.listen(config.port, "0.0.0.0", async () => {
     // This prevents "disappeared" audiobooks after container rebuilds
     (async () => {
         try {
-            const { getSystemSettings } = await import("./utils/systemSettings");
+            const { getSystemSettings } = await import(
+                "./utils/systemSettings"
+            );
             const settings = await getSystemSettings();
 
             // Only proceed if Audiobookshelf is configured and enabled
-            if (settings?.audiobookshelfEnabled && settings?.audiobookshelfUrl) {
+            if (
+                settings?.audiobookshelfEnabled &&
+                settings?.audiobookshelfUrl
+            ) {
                 // Check if cache is empty
                 const cachedCount = await prisma.audiobook.count();
 
@@ -352,7 +372,9 @@ app.listen(config.port, "0.0.0.0", async () => {
     const { downloadQueueManager } = await import("./services/downloadQueue");
     try {
         const result = await downloadQueueManager.reconcileOnStartup();
-        logger.debug(`Download queue reconciled: ${result.loaded} active, ${result.failed} marked failed`);
+        logger.debug(
+            `Download queue reconciled: ${result.loaded} active, ${result.failed} marked failed`
+        );
     } catch (err) {
         logger.error("Download queue reconciliation failed:", err);
         // Non-fatal - queue will start fresh

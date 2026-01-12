@@ -138,6 +138,9 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
     const [clearingCaches, setClearingCaches] = useState(false);
     const [reEnriching, setReEnriching] = useState(false);
     const [cleaningStaleJobs, setCleaningStaleJobs] = useState(false);
+    const [resettingArtists, setResettingArtists] = useState(false);
+    const [resettingMoodTags, setResettingMoodTags] = useState(false);
+    const [resettingAudio, setResettingAudio] = useState(false);
     const [cleanupResult, setCleanupResult] = useState<{
         totalCleaned: number;
         cleaned: {
@@ -252,7 +255,9 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                 workers: newWorkers,
                 cpuCores: workersConfig?.cpuCores || 4,
                 recommended: workersConfig?.recommended || 2,
-                description: `Using ${newWorkers} of ${workersConfig?.cpuCores || 4} available CPU cores`,
+                description: `Using ${newWorkers} of ${
+                    workersConfig?.cpuCores || 4
+                } available CPU cores`,
             });
 
             return { previousWorkers };
@@ -339,6 +344,51 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
             setError("Failed to start full enrichment");
         } finally {
             setReEnriching(false);
+        }
+    };
+
+    const handleResetArtists = async () => {
+        setResettingArtists(true);
+        setError(null);
+        try {
+            await api.resetArtistsOnly();
+            refreshNotifications();
+            refetchProgress();
+        } catch (err) {
+            console.error("Reset artists error:", err);
+            setError("Failed to reset artist enrichment");
+        } finally {
+            setResettingArtists(false);
+        }
+    };
+
+    const handleResetMoodTags = async () => {
+        setResettingMoodTags(true);
+        setError(null);
+        try {
+            await api.resetMoodTagsOnly();
+            refreshNotifications();
+            refetchProgress();
+        } catch (err) {
+            console.error("Reset mood tags error:", err);
+            setError("Failed to reset mood tags");
+        } finally {
+            setResettingMoodTags(false);
+        }
+    };
+
+    const handleResetAudioAnalysis = async () => {
+        setResettingAudio(true);
+        setError(null);
+        try {
+            await api.resetAudioAnalysisOnly();
+            refreshNotifications();
+            refetchProgress();
+        } catch (err) {
+            console.error("Reset audio analysis error:", err);
+            setError("Failed to reset audio analysis");
+        } finally {
+            setResettingAudio(false);
         }
     };
 
@@ -435,44 +485,83 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                         </div>
 
                         <div className="space-y-1">
-                            <EnrichmentStage
-                                icon={User}
-                                label="Artist Metadata"
-                                description="Bios, images, and similar artists from Last.fm"
-                                completed={enrichmentProgress.artists.completed}
-                                total={enrichmentProgress.artists.total}
-                                progress={enrichmentProgress.artists.progress}
-                                failed={enrichmentProgress.artists.failed}
-                            />
+                            {/* Artist Metadata with Re-run button */}
+                            <div className="flex items-start gap-2">
+                                <div className="flex-1">
+                                    <EnrichmentStage
+                                        icon={User}
+                                        label="Artist Metadata"
+                                        description="Bios, images, and similar artists from Last.fm"
+                                        completed={enrichmentProgress.artists.completed}
+                                        total={enrichmentProgress.artists.total}
+                                        progress={enrichmentProgress.artists.progress}
+                                        failed={enrichmentProgress.artists.failed}
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleResetArtists}
+                                    disabled={resettingArtists || syncing || reEnriching || isEnrichmentActive}
+                                    className="mt-1 px-2 py-1 text-[10px] bg-white/5 text-white/60 rounded-full
+                                        hover:bg-white/10 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                                >
+                                    {resettingArtists ? "Resetting..." : "Re-run"}
+                                </button>
+                            </div>
 
-                            <EnrichmentStage
-                                icon={Heart}
-                                label="Mood Tags"
-                                description="Vibes and mood data from Last.fm"
-                                completed={
-                                    enrichmentProgress.trackTags.enriched
-                                }
-                                total={enrichmentProgress.trackTags.total}
-                                progress={enrichmentProgress.trackTags.progress}
-                            />
+                            {/* Mood Tags with Re-run button */}
+                            <div className="flex items-start gap-2">
+                                <div className="flex-1">
+                                    <EnrichmentStage
+                                        icon={Heart}
+                                        label="Mood Tags"
+                                        description="Vibes and mood data from Last.fm"
+                                        completed={
+                                            enrichmentProgress.trackTags.enriched
+                                        }
+                                        total={enrichmentProgress.trackTags.total}
+                                        progress={enrichmentProgress.trackTags.progress}
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleResetMoodTags}
+                                    disabled={resettingMoodTags || syncing || reEnriching || isEnrichmentActive}
+                                    className="mt-1 px-2 py-1 text-[10px] bg-white/5 text-white/60 rounded-full
+                                        hover:bg-white/10 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                                >
+                                    {resettingMoodTags ? "Resetting..." : "Re-run"}
+                                </button>
+                            </div>
 
-                            <EnrichmentStage
-                                icon={Activity}
-                                label="Audio Analysis"
-                                description="BPM, key, energy, and danceability from audio files"
-                                completed={
-                                    enrichmentProgress.audioAnalysis.completed
-                                }
-                                total={enrichmentProgress.audioAnalysis.total}
-                                progress={
-                                    enrichmentProgress.audioAnalysis.progress
-                                }
-                                processing={
-                                    enrichmentProgress.audioAnalysis.processing
-                                }
-                                failed={enrichmentProgress.audioAnalysis.failed}
-                                isBackground={true}
-                            />
+                            {/* Audio Analysis with Re-run button */}
+                            <div className="flex items-start gap-2">
+                                <div className="flex-1">
+                                    <EnrichmentStage
+                                        icon={Activity}
+                                        label="Audio Analysis"
+                                        description="BPM, key, energy, and danceability from audio files"
+                                        completed={
+                                            enrichmentProgress.audioAnalysis.completed
+                                        }
+                                        total={enrichmentProgress.audioAnalysis.total}
+                                        progress={
+                                            enrichmentProgress.audioAnalysis.progress
+                                        }
+                                        processing={
+                                            enrichmentProgress.audioAnalysis.processing
+                                        }
+                                        failed={enrichmentProgress.audioAnalysis.failed}
+                                        isBackground={true}
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleResetAudioAnalysis}
+                                    disabled={resettingAudio || syncing || reEnriching || isEnrichmentActive}
+                                    className="mt-1 px-2 py-1 text-[10px] bg-white/5 text-white/60 rounded-full
+                                        hover:bg-white/10 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                                >
+                                    {resettingAudio ? "Resetting..." : "Re-run"}
+                                </button>
+                            </div>
                         </div>
 
                         {/* Control Buttons */}
@@ -740,7 +829,6 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                     </SettingsRow>
                 )}
 
-
                 {/* Audio Analyzer Workers Control */}
                 {settings.autoEnrichMetadata && (
                     <SettingsRow
@@ -756,7 +844,9 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                                 disabled={isWorkersLoading}
                                 onChange={(e) => {
                                     const newWorkers = parseInt(e.target.value);
-                                    setAnalysisWorkersMutation.mutate(newWorkers);
+                                    setAnalysisWorkersMutation.mutate(
+                                        newWorkers
+                                    );
                                 }}
                                 className="w-32 h-1 bg-[#404040] rounded-lg appearance-none cursor-pointer
                                 disabled:opacity-50 disabled:cursor-not-allowed
@@ -771,11 +861,13 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                                 ) : (
                                     <>
                                         <span className="text-sm text-white w-24 text-right">
-                                            {workersConfig?.workers ?? 2} workers
+                                            {workersConfig?.workers ?? 2}{" "}
+                                            workers
                                         </span>
                                         {workersConfig && (
                                             <span className="text-xs text-white/50 w-24 text-right">
-                                                {workersConfig.cpuCores} cores available
+                                                {workersConfig.cpuCores} cores
+                                                available
                                             </span>
                                         )}
                                     </>

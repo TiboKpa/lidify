@@ -291,6 +291,71 @@ export async function runFullEnrichment(): Promise<{
 }
 
 /**
+ * Reset only artist enrichment (keeps mood tags and audio analysis intact)
+ * Used when user wants to re-fetch artist metadata without touching track data
+ */
+export async function resetArtistsOnly(): Promise<{ count: number }> {
+    logger.debug("[Enrichment] Resetting ONLY artist enrichment status...");
+
+    const result = await prisma.artist.updateMany({
+        where: { enrichmentStatus: "completed" },
+        data: {
+            enrichmentStatus: "pending",
+            lastEnriched: null,
+        },
+    });
+
+    logger.debug(`[Enrichment] Reset ${result.count} artists to pending`);
+    return { count: result.count };
+}
+
+/**
+ * Reset only mood tags (keeps artist metadata and audio analysis intact)
+ * Used when user wants to re-fetch Last.fm mood tags without touching other enrichment
+ */
+export async function resetMoodTagsOnly(): Promise<{ count: number }> {
+    logger.debug("[Enrichment] Resetting ONLY mood tags...");
+
+    const result = await prisma.track.updateMany({
+        data: { lastfmTags: [] },
+    });
+
+    logger.debug(`[Enrichment] Reset mood tags for ${result.count} tracks`);
+    return { count: result.count };
+}
+
+/**
+ * Reset only audio analysis (keeps artist metadata and mood tags intact)
+ * Used when user wants to re-analyze audio files without touching metadata enrichment
+ */
+export async function resetAudioAnalysisOnly(): Promise<{ count: number }> {
+    logger.debug("[Enrichment] Resetting ONLY audio analysis...");
+
+    // Clean up stale processing first
+    await audioAnalysisCleanupService.cleanupStaleProcessing();
+
+    const result = await prisma.track.updateMany({
+        where: {
+            OR: [
+                { analysisStatus: "completed" },
+                { analysisStatus: "failed" },
+                { analysisStatus: "processing" },
+            ],
+        },
+        data: {
+            analysisStatus: "pending",
+            analysisStartedAt: null,
+            analysisRetryCount: 0,
+        },
+    });
+
+    logger.debug(
+        `[Enrichment] Reset audio analysis for ${result.count} tracks`
+    );
+    return { count: result.count };
+}
+
+/**
  * Main enrichment cycle
  *
  * Flow:

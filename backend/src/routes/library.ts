@@ -823,7 +823,11 @@ router.get("/artists", async (req, res) => {
 
         // Use DataCacheService for batch image lookup (DB + Redis, no API calls for lists)
         const imageMap = await dataCacheService.getArtistImagesBatch(
-            artistsWithAlbums.map((a) => ({ id: a.id, heroUrl: a.heroUrl, userHeroUrl: a.userHeroUrl }))
+            artistsWithAlbums.map((a) => ({
+                id: a.id,
+                heroUrl: a.heroUrl,
+                userHeroUrl: a.userHeroUrl,
+            }))
         );
 
         // ========== ON-DEMAND IMAGE FETCHING FOR LIBRARY ARTISTS ==========
@@ -893,8 +897,7 @@ router.get("/artists", async (req, res) => {
                                 (img: any) =>
                                     img.size === "extralarge" ||
                                     img.size === "mega"
-                            ) ||
-                            lastfmInfo.image[lastfmInfo.image.length - 1];
+                            ) || lastfmInfo.image[lastfmInfo.image.length - 1];
 
                         if (largestImage && largestImage["#text"]) {
                             coverArt = largestImage["#text"];
@@ -926,14 +929,17 @@ router.get("/artists", async (req, res) => {
         // Process in batches of 5 for concurrency control
         const batchSize = 5;
         const fetchedImages = new Map<string, string | null>();
-        
+
         for (let i = 0; i < imageFetchPromises.length; i += batchSize) {
             const batch = imageFetchPromises.slice(i, i + batchSize);
             const results = await Promise.allSettled(batch);
-            
+
             results.forEach((result) => {
                 if (result.status === "fulfilled" && result.value.coverArt) {
-                    fetchedImages.set(result.value.artistId, result.value.coverArt);
+                    fetchedImages.set(
+                        result.value.artistId,
+                        result.value.coverArt
+                    );
                 }
             });
         }
@@ -1063,10 +1069,7 @@ router.get("/enrichment-diagnostics", async (req, res) => {
             ].filter(Boolean),
         });
     } catch (error: any) {
-        logger.error(
-            "[Library] Enrichment diagnostics error:",
-            error?.message
-        );
+        logger.error("[Library] Enrichment diagnostics error:", error?.message);
         res.status(500).json({ error: "Failed to get diagnostics" });
     }
 });
@@ -1103,7 +1106,7 @@ router.post("/backfill-genres", async (req, res) => {
                 ],
             },
             select: { id: true, name: true, mbid: true },
-            take: 50,  // Process in batches
+            take: 50, // Process in batches
         });
 
         if (artistsToBackfill.length === 0) {
@@ -1116,7 +1119,7 @@ router.post("/backfill-genres", async (req, res) => {
         // Reset these artists to pending so enrichment worker re-processes them
         const result = await prisma.artist.updateMany({
             where: {
-                id: { in: artistsToBackfill.map(a => a.id) },
+                id: { in: artistsToBackfill.map((a) => a.id) },
             },
             data: {
                 enrichmentStatus: "pending",
@@ -1124,12 +1127,14 @@ router.post("/backfill-genres", async (req, res) => {
             },
         });
 
-        logger.info(`[Backfill] Reset ${result.count} artists for genre enrichment`);
+        logger.info(
+            `[Backfill] Reset ${result.count} artists for genre enrichment`
+        );
 
         res.json({
             message: `Reset ${result.count} artists for genre enrichment`,
             count: result.count,
-            artists: artistsToBackfill.map(a => a.name).slice(0, 10),
+            artists: artistsToBackfill.map((a) => a.name).slice(0, 10),
         });
     } catch (error: any) {
         logger.error("[Backfill] Genre backfill error:", error?.message);
@@ -1404,10 +1409,7 @@ router.get("/artists/:id", async (req, res) => {
                     }`
                 );
             } catch (error) {
-                logger.error(
-                    `Failed to fetch MusicBrainz discography:`,
-                    error
-                );
+                logger.error(`Failed to fetch MusicBrainz discography:`, error);
                 // Just use database albums
                 albumsWithOwnership = dbAlbums;
             }
@@ -2156,7 +2158,8 @@ router.get("/cover-art/:id?", imageLimiter, async (req, res) => {
                 const imageResponse = await fetch(coverUrl, {
                     headers: {
                         Authorization: `Bearer ${audiobookshelfApiKey}`,
-                        "User-Agent": "Lidify/1.0",
+                        "User-Agent":
+                            "Lidify/1.0.0 (https://github.com/Chevron7Locked/lidify)",
                     },
                 });
 
@@ -2346,7 +2349,8 @@ router.get("/cover-art/:id?", imageLimiter, async (req, res) => {
                 const imageResponse = await fetch(coverUrl, {
                     headers: {
                         Authorization: `Bearer ${audiobookshelfApiKey}`,
-                        "User-Agent": "Lidify/1.0",
+                        "User-Agent":
+                            "Lidify/1.0.0 (https://github.com/Chevron7Locked/lidify)",
                     },
                 });
 
@@ -2457,7 +2461,8 @@ router.get("/cover-art/:id?", imageLimiter, async (req, res) => {
         logger.debug(`[COVER-ART] Fetching: ${coverUrl.substring(0, 100)}...`);
         const imageResponse = await fetch(coverUrl, {
             headers: {
-                "User-Agent": "Lidify/1.0",
+                "User-Agent":
+                    "Lidify/1.0.0 (https://github.com/Chevron7Locked/lidify)",
             },
         });
         if (!imageResponse.ok) {
@@ -2616,7 +2621,8 @@ router.get("/cover-art-colors", imageLimiter, async (req, res) => {
         );
         const imageResponse = await fetch(imageUrl, {
             headers: {
-                "User-Agent": "Lidify/1.0",
+                "User-Agent":
+                    "Lidify/1.0.0 (https://github.com/Chevron7Locked/lidify)",
             },
         });
 
@@ -2754,7 +2760,12 @@ router.get("/tracks/:id/stream", async (req, res) => {
                     `[STREAM] Sending file: ${filePath}, mimeType: ${mimeType}`
                 );
 
-                await streamingService.streamFileWithRangeSupport(req, res, filePath, mimeType);
+                await streamingService.streamFileWithRangeSupport(
+                    req,
+                    res,
+                    filePath,
+                    mimeType
+                );
                 streamingService.destroy();
                 logger.debug(
                     `[STREAM] File sent successfully: ${path.basename(
@@ -2792,7 +2803,12 @@ router.get("/tracks/:id/stream", async (req, res) => {
                             absolutePath
                         );
 
-                    await streamingService.streamFileWithRangeSupport(req, res, filePath, mimeType);
+                    await streamingService.streamFileWithRangeSupport(
+                        req,
+                        res,
+                        filePath,
+                        mimeType
+                    );
                     streamingService.destroy();
                     return;
                 }
@@ -3416,9 +3432,7 @@ router.get("/radio", async (req, res) => {
                 // Query Artist.genres and userGenres fields with raw SQL
                 // Join Artist → Album → Track and filter by genre using LIKE for partial matching
                 // Check BOTH canonical genres AND user-added genres (OR condition)
-                const genreTracks = await prisma.$queryRaw<
-                    { id: string }[]
-                >`
+                const genreTracks = await prisma.$queryRaw<{ id: string }[]>`
                     SELECT DISTINCT t.id
                     FROM "Artist" ar
                     JOIN "Album" a ON a."artistId" = ar.id
@@ -4605,7 +4619,9 @@ router.get("/radio", async (req, res) => {
             });
 
             if (orderedTracks.length > 50) {
-                logger.debug(`... and ${orderedTracks.length - 50} more tracks`);
+                logger.debug(
+                    `... and ${orderedTracks.length - 50} more tracks`
+                );
             }
 
             logger.debug("=".repeat(100) + "\n");

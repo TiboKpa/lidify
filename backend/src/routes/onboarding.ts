@@ -83,7 +83,10 @@ async function ensureEncryptionKey(): Promise<void> {
  */
 router.post("/register", async (req, res) => {
     try {
-        logger.debug("[ONBOARDING] Register attempt for user:", req.body?.username);
+        logger.debug(
+            "[ONBOARDING] Register attempt for user:",
+            req.body?.username
+        );
         const { username, password } = registerSchema.parse(req.body);
 
         // Check if any user exists (first user becomes admin)
@@ -448,8 +451,7 @@ router.get("/status", async (req, res) => {
         try {
             const jwt = require("jsonwebtoken");
             const JWT_SECRET =
-                process.env.JWT_SECRET ||
-                "your-secret-key-change-in-production";
+                process.env.JWT_SECRET || process.env.SESSION_SECRET!;
             const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
 
             const user = await prisma.user.findUnique({

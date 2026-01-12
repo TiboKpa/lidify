@@ -23,7 +23,8 @@ class FanartService {
             baseURL: "https://webservice.fanart.tv/v3",
             timeout: 10000,
             headers: {
-                "User-Agent": "Lidify/1.0",
+                "User-Agent":
+                    "Lidify/1.0.0 (https://github.com/Chevron7Locked/lidify)",
             },
         });
     }

@@ -128,6 +128,88 @@ router.post("/full", requireAdmin, async (req, res) => {
 });
 
 /**
+ * POST /enrichment/reset-artists
+ * Reset only artist enrichment (keeps mood tags and audio analysis intact)
+ * Admin only - selective re-enrichment for large libraries
+ */
+router.post("/reset-artists", requireAdmin, async (req, res) => {
+    try {
+        const { resetArtistsOnly, triggerEnrichmentNow } = await import(
+            "../workers/unifiedEnrichment"
+        );
+
+        const result = await resetArtistsOnly();
+
+        // Trigger enrichment in background
+        triggerEnrichmentNow().catch((err) => {
+            logger.error("Artist enrichment trigger failed:", err);
+        });
+
+        res.json({
+            message: "Artist enrichment reset",
+            description: `${result.count} artists queued for re-enrichment`,
+            count: result.count,
+        });
+    } catch (error) {
+        logger.error("Reset artists error:", error);
+        res.status(500).json({ error: "Failed to reset artist enrichment" });
+    }
+});
+
+/**
+ * POST /enrichment/reset-mood-tags
+ * Reset only mood tags (keeps artist metadata and audio analysis intact)
+ * Admin only - selective re-enrichment for large libraries
+ */
+router.post("/reset-mood-tags", requireAdmin, async (req, res) => {
+    try {
+        const { resetMoodTagsOnly, triggerEnrichmentNow } = await import(
+            "../workers/unifiedEnrichment"
+        );
+
+        const result = await resetMoodTagsOnly();
+
+        // Trigger enrichment in background
+        triggerEnrichmentNow().catch((err) => {
+            logger.error("Mood tag enrichment trigger failed:", err);
+        });
+
+        res.json({
+            message: "Mood tags reset",
+            description: `${result.count} tracks queued for mood tag re-enrichment`,
+            count: result.count,
+        });
+    } catch (error) {
+        logger.error("Reset mood tags error:", error);
+        res.status(500).json({ error: "Failed to reset mood tags" });
+    }
+});
+
+/**
+ * POST /enrichment/reset-audio-analysis
+ * Reset only audio analysis (keeps artist metadata and mood tags intact)
+ * Admin only - selective re-enrichment for large libraries
+ */
+router.post("/reset-audio-analysis", requireAdmin, async (req, res) => {
+    try {
+        const { resetAudioAnalysisOnly } = await import(
+            "../workers/unifiedEnrichment"
+        );
+
+        const result = await resetAudioAnalysisOnly();
+
+        res.json({
+            message: "Audio analysis reset",
+            description: `${result.count} tracks queued for audio re-analysis`,
+            count: result.count,
+        });
+    } catch (error) {
+        logger.error("Reset audio analysis error:", error);
+        res.status(500).json({ error: "Failed to reset audio analysis" });
+    }
+});
+
+/**
  * POST /enrichment/sync
  * Trigger incremental enrichment (only processes pending items)
  * Fast sync that picks up new content without re-processing everything

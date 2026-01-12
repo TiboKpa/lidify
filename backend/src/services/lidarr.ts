@@ -622,10 +622,22 @@ class LidarrService {
                 artistPayload.tags = [discoveryTagId];
             }
 
-            const response = await this.client.post(
-                "/api/v1/artist",
-                artistPayload
-            );
+            let response;
+            try {
+                response = await this.client.post("/api/v1/artist", artistPayload);
+            } catch (postError: any) {
+                // Handle race condition where artist was added between our check and post
+                const errorMsg = postError.response?.data?.[0]?.errorMessage || postError.message || "";
+                if (errorMsg.includes("already exists") || errorMsg.includes("UNIQUE constraint failed")) {
+                    logger.debug(`   Artist added by another process, fetching existing...`);
+                    const artists = await this.client.get("/api/v1/artist");
+                    const existing = artists.data.find(
+                        (a: LidarrArtist) => a.foreignArtistId === artistData.foreignArtistId
+                    );
+                    if (existing) return existing;
+                }
+                throw postError;
+            }
 
             logger.debug(
                 `Added artist to Lidarr: ${artistName}${
@@ -635,6 +647,9 @@ class LidarrService {
 
             // Trigger metadata refresh to ensure album catalog is populated
             if (!searchForMissingAlbums) {
+                // Add a small delay to let Lidarr's internal state settle
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                
                 logger.debug(`   Triggering metadata refresh for new artist...`);
                 try {
                     await this.client.post("/api/v1/command", {

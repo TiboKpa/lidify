@@ -127,8 +127,11 @@ RUN echo "=== Migrations copied ===" && ls -la prisma/migrations/ && echo "=== E
 RUN npm ci && npm cache clean --force
 RUN npx prisma generate
 
-# Copy backend source
+# Copy backend source and build
 COPY backend/src ./src
+COPY backend/tsconfig.json ./
+RUN npm run build
+
 COPY backend/docker-entrypoint.sh ./
 COPY backend/healthcheck.js ./healthcheck-backend.js
 
@@ -203,7 +206,7 @@ stderr_logfile_maxbytes=0
 priority=20
 
 [program:backend]
-command=/bin/bash -c "/app/wait-for-db.sh 120 && cd /app/backend && npx tsx src/index.ts"
+command=/bin/bash -c "/app/wait-for-db.sh 120 && cd /app/backend && node dist/index.js"
 autostart=true
 autorestart=unexpected
 startretries=3

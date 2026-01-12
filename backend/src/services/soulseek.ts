@@ -61,7 +61,10 @@ class SoulseekService {
     private readonly MAX_DOWNLOAD_RETRIES = 5; // Try up to 5 different users (more retries with shorter timeouts)
 
     // Circuit breaker for failing users
-    private failedUsers = new Map<string, { failures: number; lastFailure: Date }>();
+    private failedUsers = new Map<
+        string,
+        { failures: number; lastFailure: Date }
+    >();
     private readonly FAILURE_THRESHOLD = 3; // Block after 3 failures
     private readonly FAILURE_WINDOW = 300000; // 5 minute window
 
@@ -136,6 +139,8 @@ class SoulseekService {
                 {
                     user: settings.soulseekUsername,
                     pass: settings.soulseekPassword,
+                    host: "server.slsknet.org",
+                    port: 2242,
                 },
                 (err: Error | null, client: SlskClient) => {
                     if (err) {
@@ -193,18 +198,24 @@ class SoulseekService {
 
         // Short cooldown after FAILED attempts (5s), longer after SUCCESS (30s)
         const now = Date.now();
-        
+
         // If last successful connection was recent, respect cooldown
-        if (!force && this.lastConnectAttempt > 0 &&
-            now - this.lastConnectAttempt < this.RECONNECT_COOLDOWN) {
+        if (
+            !force &&
+            this.lastConnectAttempt > 0 &&
+            now - this.lastConnectAttempt < this.RECONNECT_COOLDOWN
+        ) {
             throw new Error(
                 "Connection cooldown - please wait before retrying"
             );
         }
-        
+
         // If last FAILED attempt was very recent (5s), wait briefly
-        if (!force && this.lastFailedAttempt > 0 &&
-            now - this.lastFailedAttempt < this.FAILED_RECONNECT_COOLDOWN) {
+        if (
+            !force &&
+            this.lastFailedAttempt > 0 &&
+            now - this.lastFailedAttempt < this.FAILED_RECONNECT_COOLDOWN
+        ) {
             throw new Error(
                 "Connection recently failed - please wait before retrying"
             );
@@ -302,7 +313,7 @@ class SoulseekService {
         const normalizedTitle = this.normalizeTrackTitle(trackTitle);
         const useNormalized = normalizedTitle !== trackTitle;
 
-        const query = `${artistName} ${normalizedTitle}`;
+        const query = `${artistName} ${normalizedTitle}`.trim();
         if (useNormalized) {
             sessionLog(
                 "SOULSEEK",
@@ -323,6 +334,17 @@ class SoulseekService {
                 },
                 async (err, results) => {
                     const searchDuration = Date.now() - searchStartTime;
+
+                    sessionLog(
+                        "SOULSEEK",
+                        `[Search #${searchId}] Raw results received: ${
+                            results
+                                ? Array.isArray(results)
+                                    ? results.length
+                                    : "not an array"
+                                : "null"
+                        }`
+                    );
 
                     if (err) {
                         sessionLog(
@@ -515,7 +537,9 @@ class SoulseekService {
         if (record.failures >= this.FAILURE_THRESHOLD) {
             sessionLog(
                 "SOULSEEK",
-                `User ${username} blocked: ${record.failures} failures in ${Math.round(
+                `User ${username} blocked: ${
+                    record.failures
+                } failures in ${Math.round(
                     this.FAILURE_WINDOW / 60000
                 )}min window`,
                 "WARN"
@@ -527,12 +551,20 @@ class SoulseekService {
      * Categorize download errors for smarter retry behavior
      */
     private categorizeError(error: Error): {
-        type: "user_offline" | "timeout" | "connection" | "file_not_found" | "unknown";
+        type:
+            | "user_offline"
+            | "timeout"
+            | "connection"
+            | "file_not_found"
+            | "unknown";
         skipUser: boolean;
     } {
         const message = error.message.toLowerCase();
 
-        if (message.includes("user not exist") || message.includes("user offline")) {
+        if (
+            message.includes("user not exist") ||
+            message.includes("user offline")
+        ) {
             return { type: "user_offline", skipUser: true };
         }
         if (message.includes("timed out") || message.includes("timeout")) {
@@ -544,7 +576,10 @@ class SoulseekService {
         ) {
             return { type: "connection", skipUser: true };
         }
-        if (message.includes("file not found") || message.includes("no such file")) {
+        if (
+            message.includes("file not found") ||
+            message.includes("no such file")
+        ) {
             return { type: "file_not_found", skipUser: true };
         }
         return { type: "unknown", skipUser: false };
@@ -562,6 +597,7 @@ class SoulseekService {
         // Normalize search terms for matching
         const normalizedArtist = artistName
             .toLowerCase()
+            .replace(/^the\s+/, "") // Remove leading "the"
             .replace(/\s*&\s*/g, " and ")
             .replace(/[^a-z0-9\s]/g, "");
         const normalizedTitle = trackTitle
@@ -571,7 +607,13 @@ class SoulseekService {
             .replace(/^\d+\s*[-.]?\s*/, ""); // Remove leading track numbers
 
         // Get first word of artist for fuzzy matching
-        const artistFirstWord = normalizedArtist.split(/\s+/)[0];
+        const artistWords = normalizedArtist.split(/\s+/);
+        const artistFirstWord = artistWords[0];
+        // If first word is short (e.g. "of", "a"), try second word too
+        const artistSecondWord =
+            artistWords.length > 1 && artistFirstWord.length < 3
+                ? artistWords[1]
+                : "";
         // Get first few significant words of title
         const titleWords = normalizedTitle
             .split(/\s+/)
@@ -603,15 +645,17 @@ class SoulseekService {
             ) {
                 score += 50; // Full artist match
             } else if (
-                artistFirstWord.length >= 3 &&
-                normalizedFilename.includes(artistFirstWord)
+                (artistFirstWord.length >= 3 &&
+                    normalizedFilename.includes(artistFirstWord)) ||
+                (artistSecondWord &&
+                    normalizedFilename.includes(artistSecondWord))
             ) {
-                score += 35; // Partial artist match (first word)
+                score += 35; // Partial artist match (first/second word)
             }
 
             // Check if filename contains title (full or partial)
             const titleNoSpaces = normalizedTitle.replace(/\s/g, "");
-            if (normalizedFilename.includes(titleNoSpaces)) {
+            if (titleNoSpaces.length > 0 && normalizedFilename.includes(titleNoSpaces)) {
                 score += 50; // Full title match
             } else if (
                 titleWords.length > 0 &&
@@ -706,9 +750,16 @@ class SoulseekService {
         try {
             await mkdir(destDir, { recursive: true });
         } catch (err: any) {
-            sessionLog("SOULSEEK", `Failed to create directory ${destDir}: ${err.message}`, "ERROR");
+            sessionLog(
+                "SOULSEEK",
+                `Failed to create directory ${destDir}: ${err.message}`,
+                "ERROR"
+            );
             this.activeDownloads--;
-            return { success: false, error: `Cannot create destination directory: ${err.message}` };
+            return {
+                success: false,
+                error: `Cannot create destination directory: ${err.message}`,
+            };
         }
 
         sessionLog(
@@ -773,12 +824,12 @@ class SoulseekService {
                             `Download failed (${errorInfo.type}): ${err.message}`,
                             "ERROR"
                         );
-                        
+
                         // Record user failure if error indicates user issue
                         if (errorInfo.skipUser) {
                             this.recordUserFailure(match.username);
                         }
-                        
+
                         return resolve({ success: false, error: err.message });
                     }
 
