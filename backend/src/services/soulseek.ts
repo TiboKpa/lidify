@@ -152,6 +152,16 @@ class SoulseekService {
                         return reject(err);
                     }
                     this.client = client;
+                    // Prevent crash on unhandled socket errors
+                    if ((client as any).on) {
+                        (client as any).on("error", (error: Error) => {
+                            sessionLog(
+                                "SOULSEEK",
+                                `Client connection error: ${error.message}`,
+                                "ERROR"
+                            );
+                        });
+                    }
                     this.connectedAt = new Date();
                     this.consecutiveEmptySearches = 0;
                     sessionLog("SOULSEEK", "Connected to Soulseek network");
@@ -277,11 +287,13 @@ class SoulseekService {
 
     /**
      * Search for a track and return the best match plus alternatives for retry
+     * @param timeoutMs - Search timeout in milliseconds (default 45000 for downloads, use 15000 for UI)
      */
     async searchTrack(
         artistName: string,
         trackTitle: string,
-        isRetry: boolean = false
+        isRetry: boolean = false,
+        timeoutMs: number = 45000
     ): Promise<SearchTrackResult> {
         this.totalSearches++;
         const searchId = this.totalSearches;
@@ -322,187 +334,205 @@ class SoulseekService {
         }
         sessionLog(
             "SOULSEEK",
-            `[Search #${searchId}] Searching: "${query}" (connected ${connectionAge}s, ${this.consecutiveEmptySearches} consecutive empty)`
+            `[Search #${searchId}] Searching: "${query}" (timeout ${timeoutMs}ms, connected ${connectionAge}s, ${this.consecutiveEmptySearches} consecutive empty)`
         );
 
-        return new Promise(async (resolve) => {
+        return new Promise((resolve) => {
             const searchStartTime = Date.now();
-            this.client!.search(
-                {
-                    req: query,
-                    timeout: 45000, // 45 seconds for individual tracks (popular tracks can return large results)
-                },
-                async (err, results) => {
-                    const searchDuration = Date.now() - searchStartTime;
+            try {
+                this.client!.search(
+                    {
+                        req: query,
+                        timeout: timeoutMs,
+                    },
+                    async (err, results) => {
+                        const searchDuration = Date.now() - searchStartTime;
 
-                    sessionLog(
-                        "SOULSEEK",
-                        `[Search #${searchId}] Raw results received: ${
-                            results
-                                ? Array.isArray(results)
-                                    ? results.length
-                                    : "not an array"
-                                : "null"
-                        }`
-                    );
-
-                    if (err) {
                         sessionLog(
                             "SOULSEEK",
-                            `[Search #${searchId}] Search error after ${searchDuration}ms: ${err.message}`,
-                            "ERROR"
+                            `[Search #${searchId}] Raw results received: ${
+                                results
+                                    ? Array.isArray(results)
+                                        ? results.length
+                                        : "not an array"
+                                    : "null"
+                            }`
                         );
-                        this.consecutiveEmptySearches++;
 
-                        // If we get an error and haven't retried, force reconnect and try again
-                        if (!isRetry && this.consecutiveEmptySearches >= 2) {
+                        if (err) {
                             sessionLog(
                                 "SOULSEEK",
-                                `[Search #${searchId}] Search error detected, forcing reconnect and retry...`,
-                                "WARN"
+                                `[Search #${searchId}] Search error after ${searchDuration}ms: ${err.message}`,
+                                "ERROR"
                             );
-                            this.forceDisconnect();
-                            return resolve(
-                                await this.searchTrack(
-                                    artistName,
-                                    trackTitle,
-                                    true
-                                )
-                            );
+                            this.consecutiveEmptySearches++;
+
+                            // If we get an error and haven't retried, force reconnect and try again
+                            if (
+                                !isRetry &&
+                                this.consecutiveEmptySearches >= 2
+                            ) {
+                                sessionLog(
+                                    "SOULSEEK",
+                                    `[Search #${searchId}] Search error detected, forcing reconnect and retry...`,
+                                    "WARN"
+                                );
+                                this.forceDisconnect();
+                                return resolve(
+                                    await this.searchTrack(
+                                        artistName,
+                                        trackTitle,
+                                        true
+                                    )
+                                );
+                            }
+
+                            return resolve({
+                                found: false,
+                                bestMatch: null,
+                                allMatches: [],
+                            });
                         }
 
-                        return resolve({
-                            found: false,
-                            bestMatch: null,
-                            allMatches: [],
-                        });
-                    }
-
-                    if (!results || results.length === 0) {
-                        this.consecutiveEmptySearches++;
-                        sessionLog(
-                            "SOULSEEK",
-                            `[Search #${searchId}] No results found after ${searchDuration}ms (${this.consecutiveEmptySearches}/${this.MAX_CONSECUTIVE_EMPTY} consecutive empty)`,
-                            "WARN"
-                        );
-
-                        // If too many consecutive empty searches, connection might be stale
-                        if (
-                            !isRetry &&
-                            this.consecutiveEmptySearches >=
-                                this.MAX_CONSECUTIVE_EMPTY
-                        ) {
+                        if (!results || results.length === 0) {
+                            this.consecutiveEmptySearches++;
                             sessionLog(
                                 "SOULSEEK",
-                                `[Search #${searchId}] Too many consecutive empty searches, forcing reconnect and retry...`,
+                                `[Search #${searchId}] No results found after ${searchDuration}ms (${this.consecutiveEmptySearches}/${this.MAX_CONSECUTIVE_EMPTY} consecutive empty)`,
                                 "WARN"
                             );
-                            this.forceDisconnect();
-                            return resolve(
-                                await this.searchTrack(
-                                    artistName,
-                                    trackTitle,
-                                    true
-                                )
-                            );
+
+                            // If too many consecutive empty searches, connection might be stale
+                            if (
+                                !isRetry &&
+                                this.consecutiveEmptySearches >=
+                                    this.MAX_CONSECUTIVE_EMPTY
+                            ) {
+                                sessionLog(
+                                    "SOULSEEK",
+                                    `[Search #${searchId}] Too many consecutive empty searches, forcing reconnect and retry...`,
+                                    "WARN"
+                                );
+                                this.forceDisconnect();
+                                return resolve(
+                                    await this.searchTrack(
+                                        artistName,
+                                        trackTitle,
+                                        true
+                                    )
+                                );
+                            }
+
+                            return resolve({
+                                found: false,
+                                bestMatch: null,
+                                allMatches: [],
+                            });
                         }
 
-                        return resolve({
-                            found: false,
-                            bestMatch: null,
-                            allMatches: [],
-                        });
-                    }
+                        // Reset consecutive empty counter on successful results
+                        this.consecutiveEmptySearches = 0;
+                        this.lastSuccessfulSearch = new Date();
+                        this.totalSuccessfulSearches++;
 
-                    // Reset consecutive empty counter on successful results
-                    this.consecutiveEmptySearches = 0;
-                    this.lastSuccessfulSearch = new Date();
-                    this.totalSuccessfulSearches++;
-
-                    sessionLog(
-                        "SOULSEEK",
-                        `[Search #${searchId}] Found ${
-                            results.length
-                        } results in ${searchDuration}ms (success rate: ${Math.round(
-                            (this.totalSuccessfulSearches /
-                                this.totalSearches) *
-                                100
-                        )}%)`
-                    );
-
-                    // Filter for audio files with available slots
-                    const audioExtensions = [
-                        ".flac",
-                        ".mp3",
-                        ".m4a",
-                        ".ogg",
-                        ".opus",
-                        ".wav",
-                        ".aac",
-                    ];
-                    const audioFiles = results.filter((r) => {
-                        const filename = (r.file || "").toLowerCase();
-                        const isAudio = audioExtensions.some((ext) =>
-                            filename.endsWith(ext)
-                        );
-                        // Prefer files with slots available (faster download)
-                        return isAudio;
-                    });
-
-                    if (audioFiles.length === 0) {
                         sessionLog(
                             "SOULSEEK",
-                            `[Search #${searchId}] No audio files in ${results.length} results`,
-                            "WARN"
+                            `[Search #${searchId}] Found ${
+                                results.length
+                            } results in ${searchDuration}ms (success rate: ${Math.round(
+                                (this.totalSuccessfulSearches /
+                                    this.totalSearches) *
+                                    100
+                            )}%)`
                         );
-                        return resolve({
-                            found: false,
-                            bestMatch: null,
-                            allMatches: [],
+
+                        // Filter for audio files with available slots
+                        const audioExtensions = [
+                            ".flac",
+                            ".mp3",
+                            ".m4a",
+                            ".ogg",
+                            ".opus",
+                            ".wav",
+                            ".aac",
+                        ];
+                        const audioFiles = results.filter((r) => {
+                            const filename = (r.file || "").toLowerCase();
+                            const isAudio = audioExtensions.some((ext) =>
+                                filename.endsWith(ext)
+                            );
+                            // Prefer files with slots available (faster download)
+                            return isAudio;
                         });
-                    }
 
-                    // Rank and score all results
-                    const rankedMatches = this.rankAllResults(
-                        audioFiles,
-                        artistName,
-                        trackTitle
-                    );
+                        if (audioFiles.length === 0) {
+                            sessionLog(
+                                "SOULSEEK",
+                                `[Search #${searchId}] No audio files in ${results.length} results`,
+                                "WARN"
+                            );
+                            return resolve({
+                                found: false,
+                                bestMatch: null,
+                                allMatches: [],
+                            });
+                        }
 
-                    if (rankedMatches.length === 0) {
+                        // Rank and score all results
+                        const rankedMatches = this.rankAllResults(
+                            audioFiles,
+                            artistName,
+                            trackTitle
+                        );
+
+                        if (rankedMatches.length === 0) {
+                            sessionLog(
+                                "SOULSEEK",
+                                `[Search #${searchId}] No suitable match found from ${audioFiles.length} audio files`,
+                                "WARN"
+                            );
+                            return resolve({
+                                found: false,
+                                bestMatch: null,
+                                allMatches: [],
+                            });
+                        }
+
+                        const best = rankedMatches[0];
                         sessionLog(
                             "SOULSEEK",
-                            `[Search #${searchId}] No suitable match found from ${audioFiles.length} audio files`,
-                            "WARN"
+                            `[Search #${searchId}] ✓ MATCH: ${
+                                best.filename
+                            } | ${best.quality} | ${Math.round(
+                                best.size / 1024 / 1024
+                            )}MB | User: ${best.username} | Score: ${
+                                best.score
+                            }`
                         );
-                        return resolve({
-                            found: false,
-                            bestMatch: null,
-                            allMatches: [],
+                        sessionLog(
+                            "SOULSEEK",
+                            `[Search #${searchId}] Found ${rankedMatches.length} alternative sources for retry`
+                        );
+
+                        resolve({
+                            found: true,
+                            bestMatch: best,
+                            allMatches: rankedMatches,
                         });
                     }
-
-                    const best = rankedMatches[0];
-                    sessionLog(
-                        "SOULSEEK",
-                        `[Search #${searchId}] ✓ MATCH: ${best.filename} | ${
-                            best.quality
-                        } | ${Math.round(best.size / 1024 / 1024)}MB | User: ${
-                            best.username
-                        } | Score: ${best.score}`
-                    );
-                    sessionLog(
-                        "SOULSEEK",
-                        `[Search #${searchId}] Found ${rankedMatches.length} alternative sources for retry`
-                    );
-
-                    resolve({
-                        found: true,
-                        bestMatch: best,
-                        allMatches: rankedMatches,
-                    });
-                }
-            );
+                );
+            } catch (syncError: any) {
+                sessionLog(
+                    "SOULSEEK",
+                    `[Search #${searchId}] Synchronous error: ${syncError.message}`,
+                    "ERROR"
+                );
+                resolve({
+                    found: false,
+                    bestMatch: null,
+                    allMatches: [],
+                });
+            }
         });
     }
 
@@ -655,7 +685,10 @@ class SoulseekService {
 
             // Check if filename contains title (full or partial)
             const titleNoSpaces = normalizedTitle.replace(/\s/g, "");
-            if (titleNoSpaces.length > 0 && normalizedFilename.includes(titleNoSpaces)) {
+            if (
+                titleNoSpaces.length > 0 &&
+                normalizedFilename.includes(titleNoSpaces)
+            ) {
                 score += 50; // Full title match
             } else if (
                 titleWords.length > 0 &&
@@ -806,53 +839,71 @@ class SoulseekService {
                 speed: 0,
             };
 
-            this.client!.download(
-                {
-                    file: downloadFile,
-                    path: destPath,
-                },
-                (err) => {
-                    if (resolved) return; // Already timed out
-                    resolved = true;
-                    clearTimeout(timeoutId);
-                    this.activeDownloads--;
+            try {
+                this.client!.download(
+                    {
+                        file: downloadFile,
+                        path: destPath,
+                    },
+                    (err) => {
+                        if (resolved) return; // Already timed out
+                        resolved = true;
+                        clearTimeout(timeoutId);
+                        this.activeDownloads--;
 
-                    if (err) {
-                        const errorInfo = this.categorizeError(err);
-                        sessionLog(
-                            "SOULSEEK",
-                            `Download failed (${errorInfo.type}): ${err.message}`,
-                            "ERROR"
-                        );
+                        if (err) {
+                            const errorInfo = this.categorizeError(err);
+                            sessionLog(
+                                "SOULSEEK",
+                                `Download failed (${errorInfo.type}): ${err.message}`,
+                                "ERROR"
+                            );
 
-                        // Record user failure if error indicates user issue
-                        if (errorInfo.skipUser) {
-                            this.recordUserFailure(match.username);
+                            // Record user failure if error indicates user issue
+                            if (errorInfo.skipUser) {
+                                this.recordUserFailure(match.username);
+                            }
+
+                            return resolve({
+                                success: false,
+                                error: err.message,
+                            });
                         }
 
-                        return resolve({ success: false, error: err.message });
+                        // Verify file was written
+                        if (fs.existsSync(destPath)) {
+                            const stats = fs.statSync(destPath);
+                            sessionLog(
+                                "SOULSEEK",
+                                `✓ Downloaded: ${match.filename} (${Math.round(
+                                    stats.size / 1024
+                                )}KB)`
+                            );
+                            resolve({ success: true });
+                        } else {
+                            sessionLog(
+                                "SOULSEEK",
+                                "File not found after download",
+                                "ERROR"
+                            );
+                            resolve({
+                                success: false,
+                                error: "File not written",
+                            });
+                        }
                     }
-
-                    // Verify file was written
-                    if (fs.existsSync(destPath)) {
-                        const stats = fs.statSync(destPath);
-                        sessionLog(
-                            "SOULSEEK",
-                            `✓ Downloaded: ${match.filename} (${Math.round(
-                                stats.size / 1024
-                            )}KB)`
-                        );
-                        resolve({ success: true });
-                    } else {
-                        sessionLog(
-                            "SOULSEEK",
-                            "File not found after download",
-                            "ERROR"
-                        );
-                        resolve({ success: false, error: "File not written" });
-                    }
-                }
-            );
+                );
+            } catch (syncError: any) {
+                sessionLog(
+                    "SOULSEEK",
+                    `Download synchronous error: ${syncError.message}`,
+                    "ERROR"
+                );
+                resolve({
+                    success: false,
+                    error: `Synchronous error: ${syncError.message}`,
+                });
+            }
         });
     }
 
