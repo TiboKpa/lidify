@@ -90,6 +90,7 @@ export function getPreferredArtistName(name1: string, name2: string): string {
  * - This ensures "Of Mice & Men" and "Of Mice And Men" match
  */
 export function normalizeArtistName(name: string): string {
+    if (name == null) return "";
     let normalized = stripDiacritics(name.trim().toLowerCase());
     
     // Normalize "&" to "and" (handles "Of Mice & Men" vs "Of Mice And Men")
@@ -107,6 +108,7 @@ export function normalizeArtistName(name: string): string {
  * - Trims whitespace
  */
 export function normalizeAlbumTitle(title: string): string {
+    if (title == null) return "";
     return title.trim().toLowerCase();
 }
 
@@ -158,6 +160,7 @@ export function areArtistNamesSimilar(
     name2: string,
     threshold: number = 95
 ): boolean {
+    if (name1 == null || name2 == null) return false;
     // First normalize both names
     const normalized1 = normalizeArtistName(name1);
     const normalized2 = normalizeArtistName(name2);
@@ -184,6 +187,7 @@ export function findBestArtistMatch(
     candidates: string[],
     threshold: number = 95
 ): string | null {
+    if (targetName == null || !candidates?.length) return null;
     const normalizedTarget = normalizeArtistName(targetName);
 
     let bestMatch: string | null = null;
