@@ -1,11 +1,13 @@
 import axios from "axios";
 import { logger } from "../utils/logger";
+import { deezerService } from "./deezer";
 
 /**
  * Spotify Service
- * 
+ *
  * Fetches public playlist data from Spotify using anonymous tokens.
  * No API credentials required - uses Spotify's web player token endpoint.
+ * Falls back to Deezer API when Spotify scraping fails.
  */
 
 export interface SpotifyTrack {
@@ -60,10 +62,11 @@ const SPOTIFY_TRACK_REGEX = /(?:spotify\.com\/track\/|spotify:track:)([a-zA-Z0-9
 class SpotifyService {
     private anonymousToken: string | null = null;
     private tokenExpiry: number = 0;
+    private tokenRefreshPromise: Promise<string | null> | null = null;
 
     /**
      * Get anonymous access token from Spotify web player
-     * Try multiple endpoints for reliability
+     * Uses promise singleton pattern to prevent race conditions
      */
     private async getAnonymousToken(): Promise<string | null> {
         // Check if we have a valid token
@@ -71,7 +74,26 @@ class SpotifyService {
             return this.anonymousToken;
         }
 
-        // Try multiple endpoints
+        // If already fetching, wait for that promise (prevents race condition)
+        if (this.tokenRefreshPromise) {
+            return this.tokenRefreshPromise;
+        }
+
+        // Start new fetch and store the promise
+        this.tokenRefreshPromise = this.performTokenRefresh();
+
+        try {
+            return await this.tokenRefreshPromise;
+        } finally {
+            // Clear the promise once complete
+            this.tokenRefreshPromise = null;
+        }
+    }
+
+    /**
+     * Perform the actual token refresh - try multiple endpoints for reliability
+     */
+    private async performTokenRefresh(): Promise<string | null> {
         const endpoints = [
             {
                 url: "https://open.spotify.com/get_access_token",
@@ -86,7 +108,7 @@ class SpotifyService {
         for (const endpoint of endpoints) {
             try {
                 logger.debug(`Spotify: Fetching anonymous token from ${endpoint.url}...`);
-                
+
                 const response = await axios.get(endpoint.url, {
                     params: endpoint.params,
                     headers: {
@@ -104,7 +126,7 @@ class SpotifyService {
                     this.anonymousToken = token;
                     // Anonymous tokens last about an hour
                     this.tokenExpiry = Date.now() + 3600 * 1000;
-                    
+
                     logger.debug("Spotify: Got anonymous token");
                     return token;
                 }
@@ -384,8 +406,8 @@ class SpotifyService {
     ): Promise<Map<string, { album: string; albumId: string }>> {
         const albumMap = new Map<string, { album: string; albumId: string }>();
 
-        // Limit to first 20 tracks to avoid rate limiting
-        const tracksToScrape = tracks.slice(0, 20);
+        // Limit to first 30 tracks to avoid rate limiting
+        const tracksToScrape = tracks.slice(0, 30);
 
         logger.debug(`[Spotify Track Scraper] Scraping ${tracksToScrape.length} individual track pages...`);
 
@@ -405,32 +427,61 @@ class SpotifyService {
                 );
 
                 const html = response.data;
+                let albumName: string | null = null;
 
-                // Try to extract album from __NEXT_DATA__
-                const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/);
-                if (nextDataMatch) {
-                    const data = JSON.parse(nextDataMatch[1]);
-
-                    // Try various paths for track data
-                    const trackData = data?.props?.pageProps?.state?.data?.entity
-                        || data?.props?.pageProps?.track
-                        || data?.props?.pageProps?.state?.data?.trackUnion;
-
-                    const albumName = trackData?.album?.name
-                        || trackData?.albumOfTrack?.name
-                        || trackData?.album?.title;
-                    const albumId = trackData?.album?.uri?.split(":")[2]
-                        || trackData?.albumOfTrack?.uri?.split(":")[2]
-                        || trackData?.album?.id;
-
-                    if (albumName && albumName !== "Unknown Album") {
-                        albumMap.set(track.spotifyId, { album: albumName, albumId: albumId || "" });
-                        logger.debug(`[Spotify Track Scraper] Found album for "${track.title}": "${albumName}"`);
+                // Method 1: Extract from og:description meta tag
+                // Format: "Artist · Album · Song · Year"
+                const ogDescMatch = html.match(/<meta[^>]*property="og:description"[^>]*content="([^"]+)"/);
+                if (ogDescMatch) {
+                    const description = ogDescMatch[1];
+                    const parts = description.split(" · ");
+                    // Format: Artist · Album · Song · Year (4 parts minimum)
+                    // Note: For singles, album name often equals track title - this is valid
+                    if (parts.length >= 3) {
+                        const potentialAlbum = parts[1].trim();
+                        if (potentialAlbum) {
+                            albumName = potentialAlbum;
+                            logger.debug(`[Spotify Track Scraper] Found album via og:description for "${track.title}": "${albumName}"`);
+                        }
                     }
                 }
 
-                // Rate limit - wait 500ms between requests
-                await new Promise(resolve => setTimeout(resolve, 500));
+                // Method 2: Fallback to __NEXT_DATA__ if available
+                if (!albumName) {
+                    const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/);
+                    if (nextDataMatch) {
+                        try {
+                            const data = JSON.parse(nextDataMatch[1]);
+                            const trackData = data?.props?.pageProps?.state?.data?.entity
+                                || data?.props?.pageProps?.track
+                                || data?.props?.pageProps?.state?.data?.trackUnion;
+
+                            albumName = trackData?.album?.name
+                                || trackData?.albumOfTrack?.name
+                                || trackData?.album?.title;
+
+                            if (albumName) {
+                                const albumId = trackData?.album?.uri?.split(":")[2]
+                                    || trackData?.albumOfTrack?.uri?.split(":")[2]
+                                    || trackData?.album?.id;
+                                if (albumName !== "Unknown Album") {
+                                    albumMap.set(track.spotifyId, { album: albumName, albumId: albumId || "" });
+                                    logger.debug(`[Spotify Track Scraper] Found album via __NEXT_DATA__ for "${track.title}": "${albumName}"`);
+                                }
+                            }
+                        } catch {
+                            // JSON parse failed, continue
+                        }
+                    }
+                }
+
+                // Store if we found album via og:description (Method 1)
+                if (albumName && albumName !== "Unknown Album" && !albumMap.has(track.spotifyId)) {
+                    albumMap.set(track.spotifyId, { album: albumName, albumId: "" });
+                }
+
+                // Rate limit - wait 300ms between requests
+                await new Promise(resolve => setTimeout(resolve, 300));
 
             } catch (error: unknown) {
                 const errorMsg = error instanceof Error ? error.message : String(error);
@@ -439,6 +490,45 @@ class SpotifyService {
         }
 
         logger.debug(`[Spotify Track Scraper] Scraped ${albumMap.size} albums from track pages`);
+        return albumMap;
+    }
+
+    /**
+     * Resolve album names using Deezer search as fallback
+     * This is used when Spotify scraping fails
+     */
+    private async resolveAlbumsViaDeezer(
+        tracks: Array<{ spotifyId: string; title: string; artist: string }>
+    ): Promise<Map<string, { album: string; albumId: string }>> {
+        const albumMap = new Map<string, { album: string; albumId: string }>();
+
+        // Limit to first 50 tracks to avoid overwhelming Deezer
+        const tracksToResolve = tracks.slice(0, 50);
+
+        logger.debug(`[Deezer Fallback] Resolving ${tracksToResolve.length} tracks via Deezer...`);
+
+        for (const track of tracksToResolve) {
+            if (albumMap.has(track.spotifyId)) continue;
+
+            try {
+                const result = await deezerService.getTrackAlbum(track.artist, track.title);
+                if (result) {
+                    albumMap.set(track.spotifyId, {
+                        album: result.albumName,
+                        albumId: `deezer:${result.albumId}`,
+                    });
+                    logger.debug(`[Deezer Fallback] Found album for "${track.title}": "${result.albumName}"`);
+                }
+
+                // Rate limit - wait 100ms between requests
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (error: unknown) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                logger.debug(`[Deezer Fallback] Failed for "${track.title}": ${errorMsg}`);
+            }
+        }
+
+        logger.debug(`[Deezer Fallback] Resolved ${albumMap.size} albums via Deezer`);
         return albumMap;
     }
 
@@ -523,8 +613,9 @@ class SpotifyService {
             }
 
             // If we STILL have tracks with Unknown Album, try individual track pages
+            // Note: scrapeTrackPagesForAlbums internally limits to 30 tracks
             const remainingUnknown = tracks.filter(t => t.album === "Unknown Album");
-            if (remainingUnknown.length > 0 && remainingUnknown.length <= 30) {
+            if (remainingUnknown.length > 0) {
                 logger.debug(`Spotify: ${remainingUnknown.length} tracks still unknown, trying track page scraping...`);
                 const trackPageAlbums = await this.scrapeTrackPagesForAlbums(
                     remainingUnknown.map(t => ({ spotifyId: t.spotifyId, title: t.title, artist: t.artist }))
@@ -542,6 +633,29 @@ class SpotifyService {
                         }
                     }
                     logger.debug(`Spotify: Enriched ${enrichedCount} tracks via individual track page scraping`);
+                }
+            }
+
+            // Final fallback: Use Deezer to resolve remaining unknown albums
+            const stillUnknown = tracks.filter(t => t.album === "Unknown Album");
+            if (stillUnknown.length > 0) {
+                logger.debug(`Spotify: ${stillUnknown.length} tracks still unknown, trying Deezer fallback...`);
+                const deezerAlbums = await this.resolveAlbumsViaDeezer(
+                    stillUnknown.map(t => ({ spotifyId: t.spotifyId, title: t.title, artist: t.artist }))
+                );
+
+                if (deezerAlbums.size > 0) {
+                    let enrichedCount = 0;
+                    for (const track of tracks) {
+                        if (track.album === "Unknown Album" && deezerAlbums.has(track.spotifyId)) {
+                            const albumData = deezerAlbums.get(track.spotifyId)!;
+                            track.album = albumData.album;
+                            track.albumId = albumData.albumId;
+                            enrichedCount++;
+                            logger.debug(`Spotify: Enriched "${track.title}" via Deezer: "${albumData.album}"`);
+                        }
+                    }
+                    logger.debug(`Spotify: Enriched ${enrichedCount} tracks via Deezer fallback`);
                 }
             }
 
@@ -666,8 +780,9 @@ class SpotifyService {
             }
 
             // If we STILL have tracks with Unknown Album, try individual track pages
+            // Note: scrapeTrackPagesForAlbums internally limits to 30 tracks
             const remainingUnknown = tracks.filter(t => t.album === "Unknown Album");
-            if (remainingUnknown.length > 0 && remainingUnknown.length <= 30) {
+            if (remainingUnknown.length > 0) {
                 logger.debug(`Spotify Embed: ${remainingUnknown.length} tracks still unknown, trying track page scraping...`);
                 const trackPageAlbums = await this.scrapeTrackPagesForAlbums(
                     remainingUnknown.map(t => ({ spotifyId: t.spotifyId, title: t.title, artist: t.artist }))
@@ -685,6 +800,29 @@ class SpotifyService {
                         }
                     }
                     logger.debug(`Spotify Embed: Enriched ${enrichedCount} tracks via individual track page scraping`);
+                }
+            }
+
+            // Final fallback: Use Deezer to resolve remaining unknown albums
+            const stillUnknown = tracks.filter(t => t.album === "Unknown Album");
+            if (stillUnknown.length > 0) {
+                logger.debug(`Spotify Embed: ${stillUnknown.length} tracks still unknown, trying Deezer fallback...`);
+                const deezerAlbums = await this.resolveAlbumsViaDeezer(
+                    stillUnknown.map(t => ({ spotifyId: t.spotifyId, title: t.title, artist: t.artist }))
+                );
+
+                if (deezerAlbums.size > 0) {
+                    let enrichedCount = 0;
+                    for (const track of tracks) {
+                        if (track.album === "Unknown Album" && deezerAlbums.has(track.spotifyId)) {
+                            const albumData = deezerAlbums.get(track.spotifyId)!;
+                            track.album = albumData.album;
+                            track.albumId = albumData.albumId;
+                            enrichedCount++;
+                            logger.debug(`Spotify Embed: Enriched "${track.title}" via Deezer: "${albumData.album}"`);
+                        }
+                    }
+                    logger.debug(`Spotify Embed: Enriched ${enrichedCount} tracks via Deezer fallback`);
                 }
             }
 
