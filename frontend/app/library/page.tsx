@@ -8,8 +8,8 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Tab, DeleteDialogState } from "@/features/library/types";
 import {
     useLibraryArtistsQuery,
-    useLibraryAlbumsQuery,
-    useLibraryTracksQuery,
+    useLibraryAlbumsInfiniteQuery,
+    useLibraryTracksInfiniteQuery,
     LibraryFilter,
     SortOption,
 } from "@/hooks/useQueries";
