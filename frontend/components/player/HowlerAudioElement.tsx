@@ -8,12 +8,16 @@ import { howlerEngine } from "@/lib/howler-engine";
 import { audioSeekEmitter } from "@/lib/audio-seek-emitter";
 import { dispatchQueryEvent } from "@/lib/query-events";
 import {
+    playbackStateMachine,
+    operationLock,
+    HeartbeatMonitor,
+} from "@/lib/audio";
+import {
     useEffect,
     useLayoutEffect,
     useRef,
     memo,
     useCallback,
-    useMemo,
 } from "react";
 
 function getNextTrackInfo(
@@ -137,6 +141,65 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
     const preloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastPreloadedTrackIdRef = useRef<string | null>(null);
 
+    // Heartbeat monitor for detecting stalled playback
+    const heartbeatRef = useRef<HeartbeatMonitor | null>(null);
+
+    // Initialize heartbeat monitor
+    useEffect(() => {
+        heartbeatRef.current = new HeartbeatMonitor({
+            onStall: () => {
+                // Playback stalled - time not moving but Howler says playing
+                console.warn("[HowlerAudioElement] Heartbeat detected stall");
+                playbackStateMachine.transition("BUFFERING");
+                setIsBuffering(true);
+                heartbeatRef.current?.startBufferTimeout();
+            },
+            onUnexpectedStop: () => {
+                // Howler stopped without us knowing
+                console.warn("[HowlerAudioElement] Heartbeat detected unexpected stop");
+                if (playbackStateMachine.isPlaying) {
+                    // Sync React state to actual state
+                    setIsPlaying(false);
+                    playbackStateMachine.forceTransition("READY");
+                }
+            },
+            onBufferTimeout: () => {
+                // Been buffering too long - likely connection lost
+                console.error("[HowlerAudioElement] Buffer timeout - connection may be lost");
+                playbackStateMachine.transition("ERROR", {
+                    error: "Connection lost - audio stream timed out",
+                    errorCode: 408,
+                });
+                setIsPlaying(false);
+                setIsBuffering(false);
+            },
+            onRecovery: () => {
+                // Recovered from stall
+                console.log("[HowlerAudioElement] Recovered from stall");
+                if (playbackStateMachine.isBuffering) {
+                    playbackStateMachine.transition("PLAYING");
+                    setIsBuffering(false);
+                }
+            },
+            getCurrentTime: () => howlerEngine.getCurrentTime(),
+            isActuallyPlaying: () => howlerEngine.isPlaying(),
+        });
+
+        return () => {
+            heartbeatRef.current?.destroy();
+            heartbeatRef.current = null;
+        };
+    }, [setIsBuffering, setIsPlaying]);
+
+    // Start/stop heartbeat based on playback state
+    useEffect(() => {
+        if (isPlaying && !isBuffering) {
+            heartbeatRef.current?.start();
+        } else {
+            heartbeatRef.current?.stop();
+        }
+    }, [isPlaying, isBuffering]);
+
     // Reset duration when nothing is playing
     useEffect(() => {
         if (!currentTrack && !currentAudiobook && !currentPodcast) {
@@ -150,6 +213,9 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
             // Use setCurrentTimeFromEngine to respect seek lock
             // This prevents stale timeupdate events from overwriting optimistic seek updates
             setCurrentTimeFromEngine(data.time);
+
+            // Notify heartbeat of progress to detect stalls
+            heartbeatRef.current?.notifyProgress(data.time);
         };
 
         const handleLoad = (data: { duration: number }) => {
@@ -159,6 +225,11 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
                 currentPodcast?.duration ||
                 0;
             setDuration(data.duration || fallbackDuration);
+
+            // Transition state machine - load complete
+            if (playbackStateMachine.getState() === "LOADING") {
+                playbackStateMachine.transition("READY");
+            }
         };
 
         const handleEnd = () => {
@@ -188,8 +259,17 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
 
         const handleError = (data: { error: unknown }) => {
             console.error("[HowlerAudioElement] Playback error:", data.error);
+
+            // Transition state machine to ERROR
+            const errorMessage = data.error instanceof Error
+                ? data.error.message
+                : String(data.error);
+            playbackStateMachine.forceTransition("ERROR", { error: errorMessage });
+
             setIsPlaying(false);
+            setIsBuffering(false);
             isUserInitiatedRef.current = false;
+            heartbeatRef.current?.stop();
 
             if (playbackType === "track") {
                 if (queue.length > 1) {
@@ -212,6 +292,9 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
         };
 
         const handlePlay = () => {
+            // Transition state machine to PLAYING
+            playbackStateMachine.transition("PLAYING");
+
             if (!isUserInitiatedRef.current) {
                 setIsPlaying(true);
             }
@@ -221,6 +304,11 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
         const handlePause = () => {
             if (isLoadingRef.current) return;
             if (seekReloadInProgressRef.current) return;
+
+            // Transition state machine to READY (paused)
+            if (playbackStateMachine.isPlaying) {
+                playbackStateMachine.transition("READY");
+            }
 
             if (!isUserInitiatedRef.current) {
                 setIsPlaying(false);
@@ -340,6 +428,8 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
             howlerEngine.stop();
             lastTrackIdRef.current = null;
             isLoadingRef.current = false;
+            playbackStateMachine.forceTransition("IDLE");
+            heartbeatRef.current?.stop();
             return;
         }
 
@@ -365,6 +455,9 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
         lastTrackIdRef.current = currentMediaId;
         loadIdRef.current += 1;
         const thisLoadId = loadIdRef.current;
+
+        // Transition state machine to LOADING
+        playbackStateMachine.forceTransition("LOADING");
 
         let streamUrl: string | null = null;
         let startTime = 0;
