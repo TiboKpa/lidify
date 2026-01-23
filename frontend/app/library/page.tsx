@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAudioState } from "@/lib/audio-state-context";
 import { useAudioControls } from "@/lib/audio-controls-context";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Tab, DeleteDialogState } from "@/features/library/types";
@@ -26,7 +25,6 @@ import { Shuffle, ListFilter } from "lucide-react";
 export default function LibraryPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { currentTrack } = useAudioState();
     const { playTracks } = useAudioControls();
 
     // Get active tab from URL params, default to "artists"
@@ -43,6 +41,9 @@ export default function LibraryPage() {
     const [itemsPerPage, setItemsPerPage] = useState<number>(40);
     const [currentPage, setCurrentPage] = useState(urlPage);
     const [showFilters, setShowFilters] = useState(false);
+
+    // Track previous page to detect pagination changes
+    const prevPageRef = useRef(currentPage);
 
     // Sync currentPage with URL changes (browser back/forward)
     useEffect(() => {
@@ -102,6 +103,18 @@ export default function LibraryPage() {
 
     // Memoize the loading state to prevent unnecessary re-renders
     const memoizedIsLoading = useMemo(() => isLoading, [isLoading]);
+
+    // Scroll to top when page changes (after data loads)
+    useEffect(() => {
+        if (prevPageRef.current !== currentPage) {
+            prevPageRef.current = currentPage;
+            // Scroll the main content container, not the window
+            const mainContent = document.getElementById("main-content");
+            if (mainContent) {
+                mainContent.scrollTo({ top: 0, behavior: "instant" });
+            }
+        }
+    }, [currentPage]);
 
     // Pagination from active query
     const pagination = useMemo(
@@ -192,14 +205,13 @@ export default function LibraryPage() {
         [router],
     );
 
-    // Update page with URL state and scroll to top
+    // Update page with URL state - scroll handled by useEffect on currentPage change
     const updatePage = useCallback(
         (page: number) => {
             const params = new URLSearchParams();
             params.set("tab", activeTab);
             params.set("page", String(page));
             router.push(`/library?${params.toString()}`, { scroll: false });
-            window.scrollTo({ top: 0, behavior: "smooth" });
         },
         [activeTab, router],
     );
@@ -448,7 +460,6 @@ export default function LibraryPage() {
                     <TracksList
                         tracks={tracks}
                         isLoading={isLoading}
-                        currentTrackId={currentTrack?.id}
                         onPlay={handlePlayTracks}
                         onAddToQueue={addTrackToQueue}
                         onAddToPlaylist={addTrackToPlaylist}

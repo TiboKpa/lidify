@@ -70,6 +70,8 @@ services:
                 # Prefer relative /api requests (Next.js rewrites will proxy to backend).
                 # If you need a custom API URL, set NEXT_PUBLIC_API_URL explicitly.
                 NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+                # Build type: "nightly" for dev builds, unset/empty for tagged releases
+                NEXT_PUBLIC_BUILD_TYPE: ${NEXT_PUBLIC_BUILD_TYPE:-nightly}
         container_name: lidify_frontend
         environment:
             NODE_ENV: ${NODE_ENV:-production}

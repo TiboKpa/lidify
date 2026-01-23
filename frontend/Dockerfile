@@ -24,7 +24,9 @@ COPY . .
 
 # Accept build args for environment variables
 ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_BUILD_TYPE=nightly
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_BUILD_TYPE=$NEXT_PUBLIC_BUILD_TYPE
 
 # Build Next.js application
 RUN npm run build

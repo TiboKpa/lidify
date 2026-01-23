@@ -1,8 +1,6 @@
 import React, { memo } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { LucideIcon } from "lucide-react";
-import { isLocalUrl } from "@/utils/cn";
 
 interface MediaCardProps {
     href: string;
@@ -27,20 +25,21 @@ const MediaCard = memo(function MediaCard({
 }: MediaCardProps) {
     const content = (
         <div
-            className="bg-gradient-to-br from-[#121212] to-[#121212] hover:from-[#181818] hover:to-[#1a1a1a] transition-all duration-300 p-4 rounded-lg cursor-pointer border border-white/5 hover:border-white/10 hover:scale-105 hover:shadow-2xl group"
+            className="bg-[#121212] hover:bg-[#181818] p-4 rounded-lg cursor-pointer transition-colors group"
             onClick={onClick}
         >
             <div
                 className={`aspect-square bg-[#181818] ${
                     imageShape === "circle" ? "rounded-full" : "rounded-md"
                 } mb-4 flex items-center justify-center overflow-hidden relative shadow-lg`}
+                style={{ contain: "content" }}
             >
                 {imageUrl ? (
                     <Image
                         src={imageUrl}
                         alt={title}
                         fill
-                        className="object-cover group-hover:scale-110 transition-all"
+                        className="object-cover group-hover:scale-105 transition-transform"
                         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, (max-width: 1280px) 20vw, 16vw"
                         priority={false}
                         unoptimized

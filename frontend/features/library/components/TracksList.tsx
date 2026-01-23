@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, memo, useCallback } from "react";
-import Image from "next/image";
+import { useState, memo, useCallback, useMemo } from "react";
 import { Track } from "../types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PlaylistSelector } from "@/components/ui/PlaylistSelector";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
+import { CachedImage } from "@/components/ui/CachedImage";
 import { AudioLines, ListPlus, Plus, Trash2, Play } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
+import { useAudioState } from "@/lib/audio-state-context";
 
 interface TracksListProps {
     tracks: Track[];
@@ -16,7 +17,6 @@ interface TracksListProps {
     onAddToQueue: (track: Track) => void;
     onAddToPlaylist: (playlistId: string, trackId: string) => void;
     onDelete: (trackId: string, trackTitle: string) => void;
-    currentTrackId?: string;
     isLoading?: boolean;
 }
 
@@ -79,7 +79,7 @@ const TrackRow = memo(
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="relative w-10 h-10 bg-[#282828] rounded flex items-center justify-center overflow-hidden shrink-0">
                         {track.album?.coverArt ?
-                            <Image
+                            <CachedImage
                                 src={api.getCoverArtUrl(
                                     track.album.coverArt,
                                     80,
@@ -88,7 +88,6 @@ const TrackRow = memo(
                                 fill
                                 sizes="40px"
                                 className="object-cover"
-                                unoptimized
                             />
                         :   <AudioLines className="w-4 h-4 text-gray-600" />}
                     </div>
@@ -170,9 +169,10 @@ export function TracksList({
     onAddToQueue,
     onAddToPlaylist,
     onDelete,
-    currentTrackId,
     isLoading = false,
 }: TracksListProps) {
+    const { currentTrack } = useAudioState();
+    const currentTrackId = currentTrack?.id;
     const [showPlaylistSelector, setShowPlaylistSelector] = useState(false);
     const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
 
