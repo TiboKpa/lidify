@@ -7,7 +7,7 @@ import { Plus, Settings, RefreshCw } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { useAudio } from "@/lib/audio-context";
+import { useAudioState } from "@/lib/audio-state-context";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 import { useToast } from "@/lib/toast-context";
 import Image from "next/image";
@@ -36,7 +36,7 @@ export function Sidebar() {
     const { isAuthenticated } = useAuth();
     const { toast } = useToast();
     const { currentTrack, currentAudiobook, currentPodcast, playbackType } =
-        useAudio();
+        useAudioState();
     const isMobile = useIsMobile();
     const isTablet = useIsTablet();
     const isMobileOrTablet = isMobile || isTablet;

@@ -13,6 +13,7 @@ import {
     extractPrimaryArtist,
     parseArtistFromPath,
 } from "../utils/artistNormalization";
+import { backfillAllArtistCounts } from "./artistCountsService";
 
 // Supported audio formats
 const AUDIO_EXTENSIONS = new Set([
@@ -215,6 +216,12 @@ export class MusicScannerService {
         logger.debug(
             `Scan complete: +${result.tracksAdded} ~${result.tracksUpdated} -${result.tracksRemoved} (${result.duration}ms)`
         );
+
+        // Update artist counts in background (non-blocking)
+        // This ensures denormalized counts are accurate after scan
+        backfillAllArtistCounts().catch((err) => {
+            logger.error("[Scan] Artist counts update failed:", err);
+        });
 
         return result;
     }

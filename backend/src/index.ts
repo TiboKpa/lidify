@@ -379,6 +379,54 @@ app.listen(config.port, "0.0.0.0", async () => {
         logger.error("Download queue reconciliation failed:", err);
         // Non-fatal - queue will start fresh
     }
+
+    // Auto-backfill artist counts if needed (for library filtering performance)
+    // This runs in the background and doesn't block startup
+    (async () => {
+        try {
+            const { isBackfillNeeded, backfillAllArtistCounts } = await import(
+                "./services/artistCountsService"
+            );
+            const needsBackfill = await isBackfillNeeded();
+            if (needsBackfill) {
+                logger.info(
+                    "[STARTUP] Artist counts need backfilling, starting in background..."
+                );
+                const result = await backfillAllArtistCounts();
+                logger.info(
+                    `[STARTUP] Artist counts backfill complete: ${result.processed} processed, ${result.errors} errors`
+                );
+            } else {
+                logger.debug("[STARTUP] Artist counts already populated");
+            }
+        } catch (err) {
+            logger.error("[STARTUP] Artist counts backfill failed:", err);
+            // Non-fatal - backfill can be triggered manually
+        }
+    })();
+
+    // Auto-backfill images if needed (download external URLs locally)
+    // This runs in the background and doesn't block startup
+    (async () => {
+        try {
+            const { isImageBackfillNeeded, backfillAllImages } = await import(
+                "./services/imageBackfill"
+            );
+            const status = await isImageBackfillNeeded();
+            if (status.needed) {
+                logger.info(
+                    `[STARTUP] Image backfill needed: ${status.artistsWithExternalUrls} artists, ${status.albumsWithExternalUrls} albums with external URLs`
+                );
+                await backfillAllImages();
+                logger.info("[STARTUP] Image backfill complete");
+            } else {
+                logger.debug("[STARTUP] All images already stored locally");
+            }
+        } catch (err) {
+            logger.error("[STARTUP] Image backfill failed:", err);
+            // Non-fatal - backfill can be triggered manually via API
+        }
+    })();
 });
 
 // Graceful shutdown handling

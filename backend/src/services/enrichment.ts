@@ -19,6 +19,7 @@ import { prisma } from "../utils/db";
 import { lastFmService } from "./lastfm";
 import { musicBrainzService } from "./musicbrainz";
 import { imageProviderService } from "./imageProvider";
+import { downloadAndStoreImage, isNativePath } from "./imageStorage";
 
 export interface EnrichmentSettings {
     enabled: boolean;
@@ -452,7 +453,19 @@ export class EnrichmentService {
         }
 
         if (data.bio) updateData.summary = data.bio;
-        if (data.heroUrl) updateData.heroUrl = data.heroUrl;
+        if (data.heroUrl) {
+            // Download image locally if it's an external URL
+            if (!isNativePath(data.heroUrl)) {
+                const localPath = await downloadAndStoreImage(
+                    data.heroUrl,
+                    artistId,
+                    "artist"
+                );
+                updateData.heroUrl = localPath || data.heroUrl;
+            } else {
+                updateData.heroUrl = data.heroUrl;
+            }
+        }
         if (data.genres && data.genres.length > 0) {
             updateData.genres = data.genres;
         }
@@ -478,7 +491,19 @@ export class EnrichmentService {
         const updateData: any = {};
 
         if (data.rgMbid) updateData.rgMbid = data.rgMbid;
-        if (data.coverUrl) updateData.coverUrl = data.coverUrl;
+        if (data.coverUrl) {
+            // Download cover locally if it's an external URL
+            if (!isNativePath(data.coverUrl)) {
+                const localPath = await downloadAndStoreImage(
+                    data.coverUrl,
+                    albumId,
+                    "album"
+                );
+                updateData.coverUrl = localPath || data.coverUrl;
+            } else {
+                updateData.coverUrl = data.coverUrl;
+            }
+        }
         if (data.releaseDate) {
             // Store original release date in dedicated field
             updateData.originalYear = data.releaseDate.getFullYear();

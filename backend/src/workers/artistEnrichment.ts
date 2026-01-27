@@ -9,6 +9,7 @@ import { musicBrainzService } from "../services/musicbrainz";
 import { normalizeArtistName } from "../utils/artistNormalization";
 import { coverArtService } from "../services/coverArt";
 import { redisClient } from "../utils/redis";
+import { downloadAndStoreImage, isNativePath } from "../services/imageStorage";
 
 /**
  * Enriches an artist with metadata from Wikidata and Last.fm
@@ -278,6 +279,21 @@ export async function enrichSimilarArtist(artist: Artist): Promise<void> {
             }`
         );
 
+        // Download image locally if we have an external URL
+        let localHeroUrl: string | null = null;
+        if (heroUrl && !isNativePath(heroUrl)) {
+            logger.debug(`${logPrefix} Downloading image locally...`);
+            localHeroUrl = await downloadAndStoreImage(heroUrl, artist.id, "artist");
+            if (localHeroUrl) {
+                logger.debug(`${logPrefix} Image saved locally: ${localHeroUrl}`);
+            } else {
+                logger.debug(`${logPrefix} Failed to download image, keeping external URL`);
+                localHeroUrl = heroUrl; // Fallback to external URL if download fails
+            }
+        } else if (heroUrl) {
+            localHeroUrl = heroUrl; // Already a native path
+        }
+
         // Prepare similar artists JSON for storage (full Last.fm data)
         const similarArtistsJson: any =
             similarArtists.length > 0
@@ -293,7 +309,7 @@ export async function enrichSimilarArtist(artist: Artist): Promise<void> {
             where: { id: artist.id },
             data: {
                 summary,
-                heroUrl,
+                heroUrl: localHeroUrl,
                 similarArtistsJson,
                 genres: genres.length > 0 ? genres : undefined,
                 lastEnriched: new Date(),
@@ -359,15 +375,15 @@ export async function enrichSimilarArtist(artist: Artist): Promise<void> {
 
         // ========== ALBUM COVER ENRICHMENT ==========
         // Fetch covers for all albums belonging to this artist that don't have covers yet
-        await enrichAlbumCovers(artist.id, heroUrl);
+        await enrichAlbumCovers(artist.id, localHeroUrl);
 
-        // Cache artist image in Redis for faster access
-        if (heroUrl) {
+        // Cache artist image path in Redis for faster access
+        if (localHeroUrl) {
             try {
                 await redisClient.setEx(
                     `hero:${artist.id}`,
                     7 * 24 * 60 * 60,
-                    heroUrl
+                    localHeroUrl
                 );
             } catch (err) {
                 // Redis errors are non-critical

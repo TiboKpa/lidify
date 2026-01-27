@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { api } from "@/lib/api";
-import { useAudio } from "@/lib/audio-context";
+import { useAudioControls } from "@/lib/audio-controls-context";
 import { Track } from "../types";
 
 // Helper to convert library Track to audio context Track format
@@ -20,7 +20,7 @@ const formatTrackForAudio = (track: Track) => ({
 });
 
 export function useLibraryActions() {
-    const { playTrack, playTracks, addToQueue } = useAudio();
+    const { playTrack, playTracks, addToQueue } = useAudioControls();
 
     const playArtist = useCallback(async (artistId: string) => {
         try {

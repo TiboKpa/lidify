@@ -562,9 +562,12 @@ class ApiClient {
         }
 
         // Check if coverId is an external URL (needs to be proxied)
+        // Also handle native: paths which need URL encoding
         if (
             coverId &&
-            (coverId.startsWith("http://") || coverId.startsWith("https://"))
+            (coverId.startsWith("http://") ||
+                coverId.startsWith("https://") ||
+                coverId.startsWith("native:"))
         ) {
             // Pass as query parameter to avoid URL encoding issues
             const params = new URLSearchParams({ url: coverId });
@@ -580,7 +583,7 @@ class ApiClient {
         // Add token for cross-origin requests (canvas color extraction needs this)
         if (this.token) params.append("token", this.token);
         const queryString = params.toString();
-        return `${baseUrl}/api/library/cover-art/${coverId}${
+        return `${baseUrl}/api/library/cover-art/${encodeURIComponent(coverId)}${
             queryString ? "?" + queryString : ""
         }`;
     }

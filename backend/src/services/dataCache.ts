@@ -17,6 +17,7 @@ import { fanartService } from "./fanart";
 import { deezerService } from "./deezer";
 import { lastFmService } from "./lastfm";
 import { coverArtService } from "./coverArt";
+import { downloadAndStoreImage } from "./imageStorage";
 
 // Cache TTLs
 const ARTIST_IMAGE_TTL = 7 * 24 * 60 * 60; // 7 days
@@ -64,8 +65,8 @@ class DataCacheService {
             // Redis errors are non-critical
         }
 
-        // 3. Fetch from external APIs
-        const heroUrl = await this.fetchArtistImage(artistName, mbid);
+        // 3. Fetch from external APIs and store locally
+        const heroUrl = await this.fetchArtistImage(artistId, artistName, mbid);
 
         // 4. Save to both DB and Redis
         if (heroUrl) {
@@ -231,22 +232,24 @@ class DataCacheService {
     }
 
     /**
-     * Fetch artist image from external APIs
+     * Fetch artist image from external APIs and store locally
      * Order: Fanart.tv (if MBID) -> Deezer -> Last.fm
+     * Returns native path (e.g., "native:artists/{id}.jpg") or null
      */
     private async fetchArtistImage(
+        artistId: string,
         artistName: string,
         mbid?: string | null
     ): Promise<string | null> {
-        let heroUrl: string | null = null;
+        let externalUrl: string | null = null;
+        let source = "";
 
         // Try Fanart.tv first if we have a valid MBID
         if (mbid && !mbid.startsWith("temp-")) {
             try {
-                heroUrl = await fanartService.getArtistImage(mbid);
-                if (heroUrl) {
-                    logger.debug(`[DataCache] Got image from Fanart.tv for ${artistName}`);
-                    return heroUrl;
+                externalUrl = await fanartService.getArtistImage(mbid);
+                if (externalUrl) {
+                    source = "Fanart.tv";
                 }
             } catch (err) {
                 // Fanart.tv failed, continue
@@ -254,41 +257,59 @@ class DataCacheService {
         }
 
         // Try Deezer
-        try {
-            heroUrl = await deezerService.getArtistImage(artistName);
-            if (heroUrl) {
-                logger.debug(`[DataCache] Got image from Deezer for ${artistName}`);
-                return heroUrl;
+        if (!externalUrl) {
+            try {
+                externalUrl = await deezerService.getArtistImage(artistName);
+                if (externalUrl) {
+                    source = "Deezer";
+                }
+            } catch (err) {
+                // Deezer failed, continue
             }
-        } catch (err) {
-            // Deezer failed, continue
         }
 
         // Try Last.fm
-        try {
-            const validMbid = mbid && !mbid.startsWith("temp-") ? mbid : undefined;
-            const lastfmInfo = await lastFmService.getArtistInfo(artistName, validMbid);
+        if (!externalUrl) {
+            try {
+                const validMbid = mbid && !mbid.startsWith("temp-") ? mbid : undefined;
+                const lastfmInfo = await lastFmService.getArtistInfo(artistName, validMbid);
 
-            if (lastfmInfo?.image && Array.isArray(lastfmInfo.image)) {
-                const largestImage =
-                    lastfmInfo.image.find((img: any) => img.size === "extralarge" || img.size === "mega") ||
-                    lastfmInfo.image[lastfmInfo.image.length - 1];
+                if (lastfmInfo?.image && Array.isArray(lastfmInfo.image)) {
+                    const largestImage =
+                        lastfmInfo.image.find((img: any) => img.size === "extralarge" || img.size === "mega") ||
+                        lastfmInfo.image[lastfmInfo.image.length - 1];
 
-                if (largestImage && largestImage["#text"]) {
-                    // Filter out Last.fm placeholder images
-                    const imageUrl = largestImage["#text"];
-                    if (!imageUrl.includes("2a96cbd8b46e442fc41c2b86b821562f")) {
-                        logger.debug(`[DataCache] Got image from Last.fm for ${artistName}`);
-                        return imageUrl;
+                    if (largestImage && largestImage["#text"]) {
+                        const imageUrl = largestImage["#text"];
+                        // Filter out Last.fm placeholder images
+                        if (!imageUrl.includes("2a96cbd8b46e442fc41c2b86b821562f")) {
+                            externalUrl = imageUrl;
+                            source = "Last.fm";
+                        }
                     }
                 }
+            } catch (err) {
+                // Last.fm failed
             }
-        } catch (err) {
-            // Last.fm failed
         }
 
-        logger.debug(`[DataCache] No image found for ${artistName}`);
-        return null;
+        if (!externalUrl) {
+            logger.debug(`[DataCache] No image found for ${artistName}`);
+            return null;
+        }
+
+        // Download and store locally
+        logger.debug(`[DataCache] Got image from ${source} for ${artistName}, downloading...`);
+        const localPath = await downloadAndStoreImage(externalUrl, artistId, "artist");
+
+        if (localPath) {
+            logger.debug(`[DataCache] Stored image locally for ${artistName}: ${localPath}`);
+            return localPath;
+        }
+
+        // Fallback to external URL if download fails
+        logger.debug(`[DataCache] Download failed, using external URL for ${artistName}`);
+        return externalUrl;
     }
 
     /**

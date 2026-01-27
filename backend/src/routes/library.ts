@@ -24,6 +24,17 @@ import { enrichSimilarArtist } from "../workers/artistEnrichment";
 import { extractColorsFromImage } from "../utils/colorExtractor";
 import { dataCacheService } from "../services/dataCache";
 import {
+    backfillAllArtistCounts,
+    isBackfillNeeded,
+    getBackfillProgress,
+    isBackfillInProgress,
+} from "../services/artistCountsService";
+import {
+    isImageBackfillNeeded,
+    getImageBackfillProgress,
+    backfillAllImages,
+} from "../services/imageBackfill";
+import {
     getMergedGenres,
     getArtistDisplaySummary,
 } from "../utils/metadataOverrides";
@@ -506,163 +517,129 @@ router.get("/recently-added", async (req, res) => {
     }
 });
 
-// GET /library/artists?query=&limit=&offset=&filter=owned|discovery|all
+// GET /library/artists?query=&limit=&offset=&filter=owned|discovery|all&cursor=
+// Optimized with denormalized counts for O(1) filtering
 router.get("/artists", async (req, res) => {
     try {
         const {
             query = "",
-            limit: limitParam = "500",
+            limit: limitParam = "50",
             offset: offsetParam = "0",
             filter = "owned", // owned (default), discovery, all
+            cursor, // Optional cursor for cursor-based pagination
         } = req.query;
+
         const limit = Math.min(
-            parseInt(limitParam as string, 10) || 500,
+            parseInt(limitParam as string, 10) || 50,
             MAX_LIMIT
         );
         const offset = parseInt(offsetParam as string, 10) || 0;
 
-        // Build where clause based on filter
-        let where: any = {
-            albums: {
-                some: {
-                    tracks: { some: {} }, // Only artists with albums that have actual tracks
-                },
-            },
-        };
+        // Build WHERE clause using denormalized counts (fast indexed lookup)
+        // This replaces the expensive OR with nested some conditions
+        let where: any = {};
 
         if (filter === "owned") {
-            // Artists with at least 1 LIBRARY album OR an OwnedAlbum record (liked discovery)
+            // Artists with library albums OR liked discovery albums (via ownedAlbums)
             where.OR = [
-                {
-                    albums: {
-                        some: {
-                            location: "LIBRARY",
-                            tracks: { some: {} },
-                        },
-                    },
-                },
-                {
-                    // Include artists with OwnedAlbum records (includes liked discovery albums)
-                    ownedAlbums: {
-                        some: {},
-                    },
-                    albums: {
-                        some: {
-                            tracks: { some: {} },
-                        },
-                    },
-                },
+                { libraryAlbumCount: { gt: 0 } },
+                { ownedAlbums: { some: {} } },
             ];
         } else if (filter === "discovery") {
-            // Artists with ONLY DISCOVERY albums (no LIBRARY albums)
-            where = {
-                AND: [
-                    {
-                        albums: {
-                            some: {
-                                location: "DISCOVER",
-                                tracks: { some: {} },
-                            },
-                        },
-                    },
-                    {
-                        albums: {
-                            none: {
-                                location: "LIBRARY",
-                            },
-                        },
-                    },
-                ],
-            };
+            // Artists with ONLY discovery albums (no library albums)
+            where.discoveryAlbumCount = { gt: 0 };
+            where.libraryAlbumCount = 0;
+        } else {
+            // "all" - any artists with albums that have tracks
+            where.OR = [
+                { libraryAlbumCount: { gt: 0 } },
+                { discoveryAlbumCount: { gt: 0 } },
+            ];
         }
-        // filter === "all" uses the default (any albums with tracks)
 
+        // Add search query if provided
         if (query) {
-            if (where.AND) {
-                where.AND.push({
-                    name: { contains: query as string, mode: "insensitive" },
-                });
-            } else {
-                where.name = { contains: query as string, mode: "insensitive" };
-            }
+            where.name = { contains: query as string, mode: "insensitive" };
         }
 
-        // Determine which album location to count based on filter
-        const albumLocationFilter =
-            filter === "discovery"
-                ? "DISCOVER"
-                : filter === "all"
-                ? undefined
-                : "LIBRARY";
-
-        const [artistsWithAlbums, total] = await Promise.all([
-            prisma.artist.findMany({
-                where,
-                skip: offset,
-                take: limit,
-                orderBy: { name: "asc" },
-                select: {
-                    id: true,
-                    mbid: true,
-                    name: true,
-                    heroUrl: true,
-                    userHeroUrl: true,
-                    albums: {
-                        where: {
-                            ...(albumLocationFilter
-                                ? { location: albumLocationFilter }
-                                : {}),
-                            tracks: { some: {} },
-                        },
-                        select: {
-                            id: true,
-                            _count: {
-                                select: { tracks: true },
-                            },
-                        },
+        // Execute queries with timeout to prevent cascade failures
+        const [artists, total] = await prisma.$transaction(
+            async (tx) => {
+                // Build findMany args - cursor or offset pagination
+                const findManyArgs: Parameters<typeof tx.artist.findMany>[0] = {
+                    where,
+                    take: limit,
+                    orderBy: { name: "asc" as const },
+                    select: {
+                        id: true,
+                        mbid: true,
+                        name: true,
+                        heroUrl: true,
+                        userHeroUrl: true,
+                        libraryAlbumCount: true,
+                        discoveryAlbumCount: true,
+                        totalTrackCount: true,
                     },
-                },
-            }),
-            prisma.artist.count({ where }),
-        ]);
+                };
+
+                // Use cursor-based pagination if cursor provided, otherwise offset
+                if (cursor) {
+                    findManyArgs.cursor = { id: cursor as string };
+                    findManyArgs.skip = 1;
+                } else {
+                    findManyArgs.skip = offset;
+                }
+
+                return Promise.all([
+                    tx.artist.findMany(findManyArgs),
+                    tx.artist.count({ where }),
+                ]);
+            },
+            { timeout: 30000 } // 30 second timeout as safety net
+        );
 
         // Use DataCacheService for batch image lookup (DB + Redis, no API calls for lists)
-        // NOTE: On-demand image fetching removed for performance - rely on enrichment worker
-        // Artists without images will show placeholders until enrichment completes
         const imageMap = await dataCacheService.getArtistImagesBatch(
-            artistsWithAlbums.map((a) => ({
+            artists.map((a) => ({
                 id: a.id,
                 heroUrl: a.heroUrl,
                 userHeroUrl: a.userHeroUrl,
             }))
         );
 
-        const artistsWithImages = artistsWithAlbums.map((artist) => {
+        const artistsWithImages = artists.map((artist) => {
             const coverArt =
-                imageMap.get(artist.id) ||
-                artist.heroUrl ||
-                null;
-            // Sum up track counts from all albums
-            const trackCount = artist.albums.reduce(
-                (sum, album) => sum + (album._count?.tracks || 0),
-                0
-            );
+                imageMap.get(artist.id) || artist.heroUrl || null;
+
+            // Use denormalized counts based on filter
+            const albumCount =
+                filter === "discovery"
+                    ? artist.discoveryAlbumCount
+                    : filter === "all"
+                    ? artist.libraryAlbumCount + artist.discoveryAlbumCount
+                    : artist.libraryAlbumCount;
+
             return {
                 id: artist.id,
                 mbid: artist.mbid,
                 name: artist.name,
                 heroUrl: coverArt,
                 coverArt, // Alias for frontend consistency
-                albumCount: artist.albums.length,
-                trackCount,
+                albumCount,
+                trackCount: artist.totalTrackCount,
             };
         });
+
+        // Include cursor for next page (last artist ID)
+        const nextCursor =
+            artists.length === limit ? artists[artists.length - 1].id : null;
 
         res.json({
             artists: artistsWithImages,
             total,
             offset,
             limit,
+            nextCursor, // For cursor-based pagination
         });
     } catch (error: any) {
         logger.error("[Library] Get artists error:", error?.message || error);
@@ -778,6 +755,94 @@ router.post("/retry-enrichment", async (req, res) => {
     } catch (error: any) {
         logger.error("[Library] Retry enrichment error:", error?.message);
         res.status(500).json({ error: "Failed to retry enrichment" });
+    }
+});
+
+// GET /library/artist-counts/status - Check artist counts backfill status
+router.get("/artist-counts/status", async (req, res) => {
+    try {
+        const [needsBackfill, progress] = await Promise.all([
+            isBackfillNeeded(),
+            getBackfillProgress(),
+        ]);
+
+        res.json({
+            needsBackfill,
+            ...progress,
+        });
+    } catch (error: any) {
+        logger.error("[ArtistCounts] Status check error:", error?.message);
+        res.status(500).json({ error: "Failed to check status" });
+    }
+});
+
+// POST /library/artist-counts/backfill - Trigger artist counts backfill
+router.post("/artist-counts/backfill", async (req, res) => {
+    try {
+        if (isBackfillInProgress()) {
+            return res.json({
+                message: "Backfill already in progress",
+                status: "processing",
+            });
+        }
+
+        // Return immediately, run backfill in background
+        res.json({ message: "Backfill started", status: "processing" });
+
+        // Run backfill (non-blocking)
+        backfillAllArtistCounts((processed, total) => {
+            if (processed % 100 === 0) {
+                logger.debug(`[ArtistCounts] Progress: ${processed}/${total}`);
+            }
+        }).catch((error) => {
+            logger.error("[ArtistCounts] Backfill failed:", error);
+        });
+    } catch (error: any) {
+        logger.error("[ArtistCounts] Backfill trigger error:", error?.message);
+        res.status(500).json({ error: "Failed to start backfill" });
+    }
+});
+
+// GET /library/image-backfill/status - Check image backfill status
+router.get("/image-backfill/status", async (req, res) => {
+    try {
+        const [status, progress] = await Promise.all([
+            isImageBackfillNeeded(),
+            getImageBackfillProgress(),
+        ]);
+
+        res.json({
+            ...status,
+            ...progress,
+        });
+    } catch (error: any) {
+        logger.error("[ImageBackfill] Status check error:", error?.message);
+        res.status(500).json({ error: "Failed to check status" });
+    }
+});
+
+// POST /library/image-backfill/start - Trigger image backfill
+router.post("/image-backfill/start", async (req, res) => {
+    try {
+        const progress = getImageBackfillProgress();
+        if (progress.inProgress) {
+            return res.json({
+                message: "Image backfill already in progress",
+                status: "processing",
+                progress,
+            });
+        }
+
+        // Return immediately, run backfill in background
+        res.json({ message: "Image backfill started", status: "processing" });
+
+        // Run backfill (non-blocking)
+        backfillAllImages().catch((error) => {
+            logger.error("[ImageBackfill] Backfill failed:", error);
+        });
+    } catch (error: any) {
+        logger.error("[ImageBackfill] Backfill trigger error:", error?.message);
+        res.status(500).json({ error: "Failed to start image backfill" });
     }
 });
 

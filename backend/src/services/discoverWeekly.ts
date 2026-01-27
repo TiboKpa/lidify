@@ -23,6 +23,7 @@ import { getSystemSettings } from "../utils/systemSettings";
 import { discoveryLogger } from "./discoveryLogger";
 import { acquisitionService } from "./acquisitionService";
 import { shuffleArray } from "../utils/shuffle";
+import { updateArtistCounts } from "./artistCountsService";
 
 interface SeedArtist {
     name: string;
@@ -138,6 +139,9 @@ export class DiscoverWeeklyService {
                         },
                         update: {},
                     });
+
+                    // Update artist counts (album moved from DISCOVER to LIBRARY)
+                    await updateArtistCounts(dbAlbum.artistId);
 
                     logger.debug(
                         `    Moved to library: ${album.artistName} - ${album.albumTitle}`

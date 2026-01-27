@@ -3,7 +3,9 @@
 import { Play, Pause } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useAudio } from "@/lib/audio-context";
+import { useAudioState } from "@/lib/audio-state-context";
+import { useAudioPlayback } from "@/lib/audio-playback-context";
+import { useAudioControls } from "@/lib/audio-controls-context";
 import { api } from "@/lib/api";
 import { cn } from "@/utils/cn";
 import { formatTime } from "@/utils/formatTime";
@@ -14,7 +16,9 @@ interface LibraryTracksListProps {
 }
 
 export function LibraryTracksList({ tracks }: LibraryTracksListProps) {
-    const { currentTrack, isPlaying, playTracks, pause, resume } = useAudio();
+    const { currentTrack } = useAudioState();
+    const { isPlaying } = useAudioPlayback();
+    const { playTracks, pause, resume } = useAudioControls();
 
     if (!tracks || tracks.length === 0) {
         return null;
