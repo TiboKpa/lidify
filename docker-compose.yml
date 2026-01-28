@@ -285,11 +285,11 @@ services:
         deploy:
             resources:
                 limits:
-                    # Increased from 4G to handle large lossless files
-                    memory: 6G
+                    # 3GB is sufficient - we only process 60s chunks
+                    memory: 3G
                     cpus: "4"
                 reservations:
-                    memory: 2G
+                    memory: 1G
         profiles:
             - audio-analysis
 

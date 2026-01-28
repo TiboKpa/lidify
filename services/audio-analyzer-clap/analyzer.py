@@ -69,12 +69,10 @@ CONTROL_CHANNEL = 'audio:clap:control'
 # Model version identifier
 MODEL_VERSION = 'laion-clap-music-v1'
 
-# Large file handling: files above this size (bytes) will be chunked
-LARGE_FILE_THRESHOLD = 50 * 1024 * 1024  # 50MB
-# Duration to extract from large files (seconds)
-CHUNK_DURATION = 60  # 60 seconds from the middle
-# Sample rate for CLAP model (48kHz)
-CLAP_SAMPLE_RATE = 48000
+# Audio processing: extract middle segment for consistent, efficient embedding
+# 60 seconds captures the "vibe" without intros/outros and reduces memory usage
+MAX_AUDIO_DURATION = 60  # seconds
+CLAP_SAMPLE_RATE = 48000  # 48kHz for CLAP model
 
 
 class CLAPAnalyzer:
@@ -115,10 +113,10 @@ class CLAPAnalyzer:
 
     def _load_audio_chunk(self, audio_path: str) -> Tuple[Optional[np.ndarray], int]:
         """
-        Load audio from a file, handling large files by extracting a middle chunk.
+        Load audio from the middle of a file for efficient embedding.
 
-        For files larger than LARGE_FILE_THRESHOLD, only loads CHUNK_DURATION seconds
-        from the middle of the file to reduce memory usage.
+        Always extracts MAX_AUDIO_DURATION seconds from the middle of the track.
+        This captures the "vibe" while avoiding intros/outros and reducing memory.
 
         Args:
             audio_path: Path to the audio file
@@ -126,35 +124,21 @@ class CLAPAnalyzer:
         Returns:
             Tuple of (audio_array, sample_rate) or (None, 0) on error
         """
-        file_size = os.path.getsize(audio_path)
-        is_large = file_size > LARGE_FILE_THRESHOLD
-
-        if is_large:
-            logger.info(f"Large file detected ({file_size / (1024*1024):.1f}MB), loading middle {CHUNK_DURATION}s chunk")
-
         try:
-            if is_large:
-                # For large files, first get duration without loading audio
-                duration = librosa.get_duration(path=audio_path)
+            duration = librosa.get_duration(path=audio_path)
 
-                if duration > CHUNK_DURATION:
-                    # Calculate middle offset
-                    offset = (duration - CHUNK_DURATION) / 2
-                    logger.info(f"File duration: {duration:.1f}s, extracting from {offset:.1f}s")
-
-                    # Load only the middle chunk at CLAP's expected sample rate
-                    audio, sr = librosa.load(
-                        audio_path,
-                        sr=CLAP_SAMPLE_RATE,
-                        offset=offset,
-                        duration=CHUNK_DURATION,
-                        mono=True
-                    )
-                else:
-                    # File is long enough in size but short in duration, load all
-                    audio, sr = librosa.load(audio_path, sr=CLAP_SAMPLE_RATE, mono=True)
+            if duration > MAX_AUDIO_DURATION:
+                # Extract middle segment
+                offset = (duration - MAX_AUDIO_DURATION) / 2
+                audio, sr = librosa.load(
+                    audio_path,
+                    sr=CLAP_SAMPLE_RATE,
+                    offset=offset,
+                    duration=MAX_AUDIO_DURATION,
+                    mono=True
+                )
             else:
-                # Small file, load normally
+                # Short track, load entirely
                 audio, sr = librosa.load(audio_path, sr=CLAP_SAMPLE_RATE, mono=True)
 
             return audio, sr
@@ -168,8 +152,8 @@ class CLAPAnalyzer:
         """
         Generate a 1024-dimensional embedding from an audio file.
 
-        For large files (>50MB), only processes the middle 60 seconds to
-        reduce memory usage while still capturing the track's vibe.
+        Extracts the middle 60 seconds of the track for embedding, which
+        captures the vibe while avoiding intros/outros and reducing memory.
 
         Args:
             audio_path: Path to the audio file
