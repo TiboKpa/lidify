@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Montserrat } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import { FeaturesProvider } from "@/lib/features-context";
 import { ToastProvider } from "@/lib/toast-context";
 import { DownloadProvider } from "@/lib/download-context";
 import { ConditionalAudioProvider } from "@/components/providers/ConditionalAudioProvider";
@@ -59,17 +60,19 @@ export default function RootLayout({
                 <GlobalErrorBoundary>
                     <ServiceWorkerRegistration />
                     <AuthProvider>
-                        <QueryProvider>
-                            <DownloadProvider>
-                                <ConditionalAudioProvider>
-                                    <ToastProvider>
-                                        <AuthenticatedLayout>
-                                            {children}
-                                        </AuthenticatedLayout>
-                                    </ToastProvider>
-                                </ConditionalAudioProvider>
-                            </DownloadProvider>
-                        </QueryProvider>
+                        <FeaturesProvider>
+                            <QueryProvider>
+                                <DownloadProvider>
+                                    <ConditionalAudioProvider>
+                                        <ToastProvider>
+                                            <AuthenticatedLayout>
+                                                {children}
+                                            </AuthenticatedLayout>
+                                        </ToastProvider>
+                                    </ConditionalAudioProvider>
+                                </DownloadProvider>
+                            </QueryProvider>
+                        </FeaturesProvider>
                     </AuthProvider>
                 </GlobalErrorBoundary>
             </body>
