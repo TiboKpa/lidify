@@ -5,6 +5,7 @@ import { SettingsSection, SettingsRow, SettingsToggle } from "../ui";
 import { SystemSettings } from "../../types";
 import { api } from "@/lib/api";
 import { enrichmentApi } from "@/lib/enrichmentApi";
+import { useFeatures } from "@/lib/features-context";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import {
     CheckCircle,
@@ -135,6 +136,7 @@ function EnrichmentStage({
 }
 
 export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
+    const { musicCNN, vibeEmbeddings, loading: featuresLoading } = useFeatures();
     const [syncing, setSyncing] = useState(false);
     const [clearingCaches, setClearingCaches] = useState(false);
     const [reEnriching, setReEnriching] = useState(false);
@@ -142,6 +144,7 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
     const [resettingArtists, setResettingArtists] = useState(false);
     const [resettingMoodTags, setResettingMoodTags] = useState(false);
     const [resettingAudio, setResettingAudio] = useState(false);
+    const [resettingVibe, setResettingVibe] = useState(false);
     const [cleanupResult, setCleanupResult] = useState<{
         totalCleaned: number;
         cleaned: {
@@ -432,6 +435,21 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
         }
     };
 
+    const handleResetVibeEmbeddings = async () => {
+        setResettingVibe(true);
+        setError(null);
+        try {
+            await enrichmentApi.resetVibeEmbeddings();
+            refreshNotifications();
+            refetchProgress();
+        } catch (err) {
+            console.error("Reset vibe embeddings error:", err);
+            setError("Failed to reset vibe embeddings");
+        } finally {
+            setResettingVibe(false);
+        }
+    };
+
     const handleClearCaches = async () => {
         setClearingCaches(true);
         setError(null);
@@ -573,48 +591,81 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                             </div>
 
                             {/* Audio Analysis with Re-run button */}
-                            <div className="flex items-start gap-2">
-                                <div className="flex-1">
-                                    <EnrichmentStage
-                                        icon={Activity}
-                                        label="Audio Analysis"
-                                        description="BPM, key, energy, and danceability from audio files"
-                                        completed={
-                                            enrichmentProgress.audioAnalysis.completed
-                                        }
-                                        total={enrichmentProgress.audioAnalysis.total}
-                                        progress={
-                                            enrichmentProgress.audioAnalysis.progress
-                                        }
-                                        processing={
-                                            enrichmentProgress.audioAnalysis.processing
-                                        }
-                                        failed={enrichmentProgress.audioAnalysis.failed}
-                                        isBackground={true}
-                                    />
+                            {!featuresLoading && musicCNN ? (
+                                <div className="flex items-start gap-2">
+                                    <div className="flex-1">
+                                        <EnrichmentStage
+                                            icon={Activity}
+                                            label="Audio Analysis"
+                                            description="BPM, key, energy, and danceability from audio files"
+                                            completed={
+                                                enrichmentProgress.audioAnalysis.completed
+                                            }
+                                            total={enrichmentProgress.audioAnalysis.total}
+                                            progress={
+                                                enrichmentProgress.audioAnalysis.progress
+                                            }
+                                            processing={
+                                                enrichmentProgress.audioAnalysis.processing
+                                            }
+                                            failed={enrichmentProgress.audioAnalysis.failed}
+                                            isBackground={true}
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={handleResetAudioAnalysis}
+                                        disabled={resettingAudio || syncing || reEnriching || isEnrichmentActive}
+                                        className="mt-1 px-2 py-1 text-[10px] bg-white/5 text-white/60 rounded-full
+                                            hover:bg-white/10 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                                    >
+                                        {resettingAudio ? "Resetting..." : "Re-run"}
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={handleResetAudioAnalysis}
-                                    disabled={resettingAudio || syncing || reEnriching || isEnrichmentActive}
-                                    className="mt-1 px-2 py-1 text-[10px] bg-white/5 text-white/60 rounded-full
-                                        hover:bg-white/10 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                                >
-                                    {resettingAudio ? "Resetting..." : "Re-run"}
-                                </button>
-                            </div>
+                            ) : !featuresLoading ? (
+                                <div className="opacity-50 py-2">
+                                    <h4 className="text-sm font-medium text-gray-300">Audio Analysis</h4>
+                                    <p className="text-sm text-gray-500">Not available with current profile</p>
+                                    <p className="text-xs text-gray-600 mt-1">
+                                        Deploy with --profile analysis to enable
+                                    </p>
+                                </div>
+                            ) : null}
 
-                            {/* CLAP Embeddings (Vibe Similarity) */}
-                            {enrichmentProgress.clapEmbeddings && (
-                                <EnrichmentStage
-                                    icon={Waves}
-                                    label="Vibe Embeddings"
-                                    description="CLAP audio embeddings for similarity search"
-                                    completed={enrichmentProgress.clapEmbeddings.completed}
-                                    total={enrichmentProgress.clapEmbeddings.total}
-                                    progress={enrichmentProgress.clapEmbeddings.progress}
-                                    isBackground={true}
-                                />
-                            )}
+                            {/* CLAP Embeddings (Vibe Similarity) with Re-run button */}
+                            {!featuresLoading && vibeEmbeddings ? (
+                                enrichmentProgress.clapEmbeddings && (
+                                    <div className="flex items-start gap-2">
+                                        <div className="flex-1">
+                                            <EnrichmentStage
+                                                icon={Waves}
+                                                label="Vibe Embeddings"
+                                                description="CLAP audio embeddings for similarity search"
+                                                completed={enrichmentProgress.clapEmbeddings.completed}
+                                                total={enrichmentProgress.clapEmbeddings.total}
+                                                progress={enrichmentProgress.clapEmbeddings.progress}
+                                                failed={enrichmentProgress.clapEmbeddings.failed}
+                                                isBackground={true}
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={handleResetVibeEmbeddings}
+                                            disabled={resettingVibe || syncing || reEnriching || isEnrichmentActive}
+                                            className="mt-1 px-2 py-1 text-[10px] bg-white/5 text-white/60 rounded-full
+                                                hover:bg-white/10 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                                        >
+                                            {resettingVibe ? "Resetting..." : "Re-run"}
+                                        </button>
+                                    </div>
+                                )
+                            ) : !featuresLoading ? (
+                                <div className="opacity-50 py-2">
+                                    <h4 className="text-sm font-medium text-gray-300">Vibe Similarity</h4>
+                                    <p className="text-sm text-gray-500">Not available with current profile</p>
+                                    <p className="text-xs text-gray-600 mt-1">
+                                        Deploy with --profile vibe to enable
+                                    </p>
+                                </div>
+                            ) : null}
                         </div>
 
                         {/* Control Buttons */}
@@ -883,7 +934,7 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                 )}
 
                 {/* Audio Analyzer Workers Control */}
-                {settings.autoEnrichMetadata && (
+                {settings.autoEnrichMetadata && !featuresLoading && musicCNN && (
                     <SettingsRow
                         label="Audio Analysis Workers"
                         description="CPU workers for Essentia ML analysis (BPM, key, mood, energy). Lower values reduce CPU usage on older systems."
@@ -931,7 +982,7 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                 )}
 
                 {/* CLAP Analyzer Workers Control */}
-                {settings.autoEnrichMetadata && (
+                {settings.autoEnrichMetadata && !featuresLoading && vibeEmbeddings && (
                     <SettingsRow
                         label="Vibe Embedding Workers"
                         description="CPU workers for CLAP embeddings (vibe similarity). More memory intensive - reduce on systems with less RAM."
