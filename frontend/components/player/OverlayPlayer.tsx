@@ -27,8 +27,6 @@ import { formatTime, clampTime, formatTimeRemaining } from "@/utils/formatTime";
 import { cn } from "@/utils/cn";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 import { toast } from "sonner";
-import { VibeComparisonArt } from "./VibeOverlay";
-import { useAudioState } from "@/lib/audio-state-context";
 import { SeekSlider } from "./SeekSlider";
 import { useFeatures } from "@/lib/features-context";
 
@@ -46,8 +44,6 @@ export function OverlayPlayer() {
         isShuffle,
         repeatMode,
         vibeMode,
-        queue,
-        currentIndex,
         audioError,
         clearAudioError,
         pause,
@@ -64,9 +60,6 @@ export function OverlayPlayer() {
         stopVibeMode,
         duration: playbackDuration,
     } = useAudio();
-
-    // Get current track's audio features for vibe comparison
-    const currentTrackFeatures = queue[currentIndex]?.audioFeatures || null;
 
     const isMobile = useIsMobile();
     const isTablet = useIsTablet();
@@ -273,13 +266,9 @@ export function OverlayPlayer() {
                         )}
                     />
 
-                    {/* Album art OR Vibe Comparison when in vibe mode */}
+                    {/* Album art - always show album art, even in vibe mode */}
                     <div className="relative w-full h-full bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded-2xl overflow-hidden shadow-2xl">
-                        {vibeMode && currentTrackFeatures ? (
-                            <VibeComparisonArt
-                                currentTrackFeatures={currentTrackFeatures}
-                            />
-                        ) : coverUrl ? (
+                        {coverUrl ? (
                             <Image
                                 key={coverUrl}
                                 src={coverUrl}

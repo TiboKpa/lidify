@@ -565,10 +565,33 @@ class ApiClient {
         const baseUrl = `${this.getBaseUrl()}/api/library/tracks/${trackId}/stream`;
         // For audio element requests, cookies may not be sent cross-origin in development
         // Add token as query param for authentication (supported by requireAuthOrToken)
-        if (this.token) {
-            return `${baseUrl}?token=${encodeURIComponent(this.token)}`;
+        const token = this.getCurrentToken();
+        if (token) {
+            return `${baseUrl}?token=${encodeURIComponent(token)}`;
         }
         return baseUrl;
+    }
+
+    /**
+     * Get the current token, lazily loading from localStorage if needed.
+     * This handles the case where the singleton was created during SSR
+     * and this.token wasn't set from localStorage.
+     */
+    private getCurrentToken(): string | null {
+        // If we already have a token, use it
+        if (this.token) {
+            return this.token;
+        }
+        // Try to load from localStorage if on client
+        if (typeof window !== "undefined") {
+            const storedToken = localStorage.getItem(AUTH_TOKEN_KEY);
+            if (storedToken) {
+                this.token = storedToken;
+                this.tokenInitialized = true;
+                return storedToken;
+            }
+        }
+        return null;
     }
 
     /**
@@ -577,14 +600,15 @@ class ApiClient {
      * @param size - Optional size in pixels
      * @param includeToken - Include auth token in URL (needed for canvas color extraction)
      */
-    getCoverArtUrl(coverId: string, size?: number, includeToken = false): string {
+    getCoverArtUrl(coverId: string, size?: number, includeToken = true): string {
         const baseUrl = this.getBaseUrl();
+        const token = includeToken ? this.getCurrentToken() : null;
 
         // Check if this is an audiobook cover path (served by audiobooks endpoint, not proxied)
         if (coverId && coverId.startsWith("/audiobooks/")) {
             const url = `${baseUrl}/api${coverId}`;
-            if (includeToken && this.token) {
-                return `${url}?token=${encodeURIComponent(this.token)}`;
+            if (token) {
+                return `${url}?token=${encodeURIComponent(token)}`;
             }
             return url;
         }
@@ -592,8 +616,8 @@ class ApiClient {
         // Check if this is a podcast cover path (served by podcasts endpoint, not proxied)
         if (coverId && coverId.startsWith("/podcasts/")) {
             const url = `${baseUrl}/api${coverId}`;
-            if (includeToken && this.token) {
-                return `${url}?token=${encodeURIComponent(this.token)}`;
+            if (token) {
+                return `${url}?token=${encodeURIComponent(token)}`;
             }
             return url;
         }
@@ -609,14 +633,14 @@ class ApiClient {
             // Pass as query parameter to avoid URL encoding issues
             const params = new URLSearchParams({ url: coverId });
             if (size) params.append("size", size.toString());
-            if (includeToken && this.token) params.append("token", this.token);
+            if (token) params.append("token", token);
             return `${baseUrl}/api/library/cover-art?${params.toString()}`;
         }
 
         // Otherwise use as path parameter (cover ID - typically a hash)
         const params = new URLSearchParams();
         if (size) params.append("size", size.toString());
-        if (includeToken && this.token) params.append("token", this.token);
+        if (token) params.append("token", token);
         const queryString = params.toString();
         return `${baseUrl}/api/library/cover-art/${encodeURIComponent(coverId)}${
             queryString ? "?" + queryString : ""
@@ -1106,8 +1130,9 @@ class ApiClient {
         const baseUrl = `${this.getBaseUrl()}/api/audiobooks/${id}/stream`;
         // For audio element requests, cookies may not be sent cross-origin in development
         // Add token as query param for authentication (supported by requireAuthOrToken)
-        if (this.token) {
-            return `${baseUrl}?token=${encodeURIComponent(this.token)}`;
+        const token = this.getCurrentToken();
+        if (token) {
+            return `${baseUrl}?token=${encodeURIComponent(token)}`;
         }
         return baseUrl;
     }
@@ -1163,8 +1188,9 @@ class ApiClient {
         const baseUrl = `${this.getBaseUrl()}/api/podcasts/${podcastId}/episodes/${episodeId}/stream`;
         // For audio element requests, cookies may not be sent cross-origin in development
         // Add token as query param for authentication (supported by requireAuthOrToken)
-        if (this.token) {
-            return `${baseUrl}?token=${encodeURIComponent(this.token)}`;
+        const token = this.getCurrentToken();
+        if (token) {
+            return `${baseUrl}?token=${encodeURIComponent(token)}`;
         }
         return baseUrl;
     }
@@ -1816,6 +1842,7 @@ class ApiClient {
             analysisError: string | null;
             analyzedAt: string | null;
             analysisVersion: string | null;
+            analysisMode: string | null;
             bpm: number | null;
             beatsCount: number | null;
             key: string | null;
@@ -1830,6 +1857,14 @@ class ApiClient {
             instrumentalness: number | null;
             acousticness: number | null;
             speechiness: number | null;
+            // MusiCNN mood predictions
+            moodHappy: number | null;
+            moodSad: number | null;
+            moodRelaxed: number | null;
+            moodAggressive: number | null;
+            moodParty: number | null;
+            moodAcoustic: number | null;
+            moodElectronic: number | null;
             moodTags: string[] | null;
             essentiaGenres: string[] | null;
             lastfmTags: string[] | null;

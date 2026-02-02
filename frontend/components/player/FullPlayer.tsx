@@ -22,22 +22,18 @@ import {
     RotateCw,
     Loader2,
     AudioWaveform,
-    ChevronUp,
-    ChevronDown,
     AlertTriangle,
     RefreshCw,
     X,
 } from "lucide-react";
-import { useState, lazy, Suspense } from "react";
+import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { KeyboardShortcutsTooltip } from "./KeyboardShortcutsTooltip";
-import { cn, isLocalUrl } from "@/utils/cn";
+import { cn } from "@/utils/cn";
 import { useFeatures } from "@/lib/features-context";
 import { formatTime, clampTime, formatTimeRemaining } from "@/utils/formatTime";
 import { SeekSlider } from "./SeekSlider";
 
-// Lazy load VibeOverlayEnhanced - only loads when vibe mode is active
-const EnhancedVibeOverlay = lazy(() => import("./VibeOverlayEnhanced").then(mod => ({ default: mod.EnhancedVibeOverlay })));
 
 /**
  * FullPlayer - UI-only component for desktop bottom player
@@ -90,11 +86,33 @@ export function FullPlayer() {
     } = useAudioControls();
 
     const [isVibeLoading, setIsVibeLoading] = useState(false);
-    const [isVibePanelExpanded, setIsVibePanelExpanded] = useState(false);
     const { vibeEmbeddings, loading: featuresLoading } = useFeatures();
 
     // Get current track's audio features for vibe comparison
     const currentTrackFeatures = queue[currentIndex]?.audioFeatures || null;
+
+    // Calculate vibe match score (simplified version - compares key audio features)
+    const vibeMatchScore = useMemo(() => {
+        if (!vibeMode || !vibeSourceFeatures || !currentTrackFeatures) return null;
+
+        // Compare key features: energy, valence, danceability, arousal
+        const features = ['energy', 'valence', 'danceability', 'arousal'] as const;
+        const scores: number[] = [];
+
+        for (const key of features) {
+            const sourceVal = vibeSourceFeatures[key as keyof typeof vibeSourceFeatures];
+            const currentVal = currentTrackFeatures[key as keyof typeof currentTrackFeatures];
+
+            if (typeof sourceVal === 'number' && typeof currentVal === 'number') {
+                const diff = Math.abs(sourceVal - currentVal);
+                scores.push(1 - diff);
+            }
+        }
+
+        if (scores.length === 0) return null;
+        const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+        return Math.round(avgScore * 100);
+    }, [vibeMode, vibeSourceFeatures, currentTrackFeatures]);
 
     // Handle Vibe Mode toggle - finds tracks that sound like the current track
     const handleVibeToggle = async () => {
@@ -233,45 +251,6 @@ export function FullPlayer() {
 
     return (
         <div className="relative flex-shrink-0">
-            {/* Floating Vibe Overlay - shows when tab is clicked */}
-            {vibeMode && isVibePanelExpanded && (
-                <div className="absolute bottom-full right-4 mb-2 z-50">
-                    <Suspense fallback={<div className="bg-[#181818] border border-white/10 rounded-lg p-4 text-white/50">Loading vibe analysis...</div>}>
-                        <EnhancedVibeOverlay
-                            currentTrackFeatures={currentTrackFeatures}
-                            variant="floating"
-                            onClose={() => setIsVibePanelExpanded(false)}
-                        />
-                    </Suspense>
-                </div>
-            )}
-
-            {/* Vibe Tab - shows when vibe mode is active */}
-            {vibeMode && (
-                <button
-                    onClick={() => setIsVibePanelExpanded(!isVibePanelExpanded)}
-                    className={cn(
-                        "absolute -top-8 right-4 z-10",
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg",
-                        "bg-[#181818] border border-b-0 border-white/10",
-                        "text-xs font-medium transition-colors",
-                        isVibePanelExpanded
-                            ? "text-brand"
-                            : "text-white/70 hover:text-brand"
-                    )}
-                    aria-label={isVibePanelExpanded ? "Hide vibe analysis" : "Show vibe analysis"}
-                    aria-expanded={isVibePanelExpanded}
-                >
-                    <AudioWaveform className="w-3.5 h-3.5" />
-                    <span>Vibe Analysis</span>
-                    {isVibePanelExpanded ? (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                    ) : (
-                        <ChevronUp className="w-3.5 h-3.5" />
-                    )}
-                </button>
-            )}
-
             {/* Error Banner */}
             {audioError && (
                 <div className="bg-red-500/20 border-t border-red-500/30 px-4 py-1.5 flex items-center justify-between gap-2">
@@ -376,6 +355,22 @@ export function FullPlayer() {
                                 <p className="text-xs text-gray-400 truncate">
                                     {subtitle}
                                 </p>
+                            )}
+                            {/* Vibe match score when in vibe mode */}
+                            {vibeMode && vibeMatchScore !== null && (
+                                <span
+                                    className={cn(
+                                        "inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded mt-1",
+                                        vibeMatchScore >= 80
+                                            ? "bg-green-500/20 text-green-400"
+                                            : vibeMatchScore >= 60
+                                            ? "bg-brand/20 text-brand"
+                                            : "bg-orange-500/20 text-orange-400"
+                                    )}
+                                >
+                                    <AudioWaveform className="w-2.5 h-2.5" />
+                                    {vibeMatchScore}% match
+                                </span>
                             )}
                         </div>
                     </div>
