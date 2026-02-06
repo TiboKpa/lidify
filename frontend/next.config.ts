@@ -86,8 +86,10 @@ const nextConfig: NextConfig = {
         ];
     },
     // Proxy API requests to backend (for Docker all-in-one container)
+    // Use NEXT_PUBLIC_BACKEND_URL if set (build-time), otherwise default to localhost:3006
+    // At runtime, Next.js will proxy /api/* requests to the backend
     async rewrites() {
-        const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:3006";
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:3006";
         
         return [
             {

@@ -29,7 +29,7 @@ import pLimit from "p-limit";
 // Configuration
 const ARTIST_BATCH_SIZE = 10;
 const TRACK_BATCH_SIZE = 20;
-const ENRICHMENT_INTERVAL_MS = 30 * 1000; // 30 seconds
+const ENRICHMENT_INTERVAL_MS = 5 * 1000; // 5 seconds - rate limiter handles API limits
 const MAX_CONSECUTIVE_SYSTEM_FAILURES = 5; // Circuit breaker threshold
 
 let isRunning = false;
@@ -54,6 +54,9 @@ let currentBatchFailures: BatchFailures = {
     tracks: [],
     audio: [],
 };
+
+// Session-level failure counter (accumulates across cycles, reset on enrichment start)
+let sessionFailureCount = { artists: 0, tracks: 0, audio: 0 };
 
 // Mood tags to extract from Last.fm
 const MOOD_TAGS = new Set([
@@ -215,8 +218,17 @@ export async function startUnifiedEnrichmentWorker() {
     logger.debug(`   Interval: ${ENRICHMENT_INTERVAL_MS / 1000}s`);
     logger.debug("");
 
-    // Initialize state
-    await enrichmentStateService.initializeState();
+     // Check if there's existing state that might be problematic
+     const existingState = await enrichmentStateService.getState();
+     
+     // Only clear state if it exists and is in a non-idle state
+     // This prevents clearing fresh state from a previous worker instance
+     if (existingState && existingState.status !== "idle") {
+         await enrichmentStateService.clear();
+     }
+     
+     // Initialize state
+     await enrichmentStateService.initializeState();
 
     // Setup control channel subscription
     await setupControlChannel();
@@ -377,88 +389,68 @@ async function runEnrichmentCycle(fullMode: boolean): Promise<{
     tracks: number;
     audioQueued: number;
 }> {
-    // Check if paused
+    const emptyResult = { artists: 0, tracks: 0, audioQueued: 0 };
+
+    // Sync local pause flag with state service
+    if (!isPaused) {
+        const state = await enrichmentStateService.getState();
+        if (state?.status === "paused" || state?.status === "stopping") {
+            isPaused = true;
+        }
+    }
+
     if (isPaused) {
-        return { artists: 0, tracks: 0, audioQueued: 0 };
+        return emptyResult;
     }
 
-    // Check state service
-    const state = await enrichmentStateService.getState();
-    if (state?.status === "paused" || state?.status === "stopping") {
-        isPaused = true;
-        return { artists: 0, tracks: 0, audioQueued: 0 };
+    // Skip if already running (unless full mode or immediate request)
+    const bypassRunningCheck = fullMode || immediateEnrichmentRequested;
+    if (isRunning && !bypassRunningCheck) {
+        return emptyResult;
     }
 
-    // Allow immediate enrichment requests to bypass the isRunning check
-    // This prevents race conditions when new content is imported
-    if (isRunning && !fullMode && !immediateEnrichmentRequested) {
-        return { artists: 0, tracks: 0, audioQueued: 0 };
-    }
-
-    // Enforce minimum interval between cycles (unless full mode or immediate request)
+    // Enforce minimum interval (unless full mode or immediate request)
     const now = Date.now();
-    if (
-        !fullMode &&
-        !immediateEnrichmentRequested &&
-        now - lastRunTime < MIN_INTERVAL_MS
-    ) {
-        return { artists: 0, tracks: 0, audioQueued: 0 };
+    if (!bypassRunningCheck && now - lastRunTime < MIN_INTERVAL_MS) {
+        return emptyResult;
     }
 
-    // Clear the immediate request flag
     immediateEnrichmentRequested = false;
     lastRunTime = now;
-
     isRunning = true;
+
     let artistsProcessed = 0;
     let tracksProcessed = 0;
     let audioQueued = 0;
 
-try {
-         // Reset system failure counter on successful cycle start
-         consecutiveSystemFailures = 0;
+    try {
+        consecutiveSystemFailures = 0;
 
-         const artistsPhase = await enrichArtistsPhase();
-         if (!artistsPhase.shouldContinue) {
-             return {
-                 artists: artistsPhase.result,
-                 tracks: 0,
-                 audioQueued: 0,
-             };
-         }
-         artistsProcessed = artistsPhase.result;
+        // Run phases sequentially, halting if stopped/paused
+        const artistResult = await runPhase("artists", executeArtistsPhase);
+        if (artistResult === null) {
+            return { artists: 0, tracks: 0, audioQueued: 0 };
+        }
+        artistsProcessed = artistResult;
 
-         const moodTagsPhase = await enrichMoodTagsPhase();
-         if (!moodTagsPhase.shouldContinue) {
-             return {
-                 artists: artistsProcessed,
-                 tracks: moodTagsPhase.result,
-                 audioQueued: 0,
-             };
-         }
-         tracksProcessed = moodTagsPhase.result;
+        const trackResult = await runPhase("tracks", executeMoodTagsPhase);
+        if (trackResult === null) {
+            return { artists: artistsProcessed, tracks: 0, audioQueued: 0 };
+        }
+        tracksProcessed = trackResult;
 
-         const audioPhase = await enrichAudioPhase();
-         if (!audioPhase.shouldContinue) {
-             return {
-                 artists: artistsProcessed,
-                 tracks: tracksProcessed,
-                 audioQueued: audioPhase.result,
-             };
-         }
-         audioQueued = audioPhase.result;
+        const audioResult = await runPhase("audio", executeAudioPhase);
+        if (audioResult === null) {
+            return { artists: artistsProcessed, tracks: tracksProcessed, audioQueued: 0 };
+        }
+        audioQueued = audioResult;
 
-         const vibePhase = await enrichVibePhase();
-         if (!vibePhase.shouldContinue) {
-             return {
-                 artists: artistsProcessed,
-                 tracks: tracksProcessed,
-                 audioQueued: audioQueued,
-             };
-         }
-
-         const features = await featureDetection.getFeatures();
-         const vibeQueued = vibePhase.result;
+        const vibeResult = await runPhase("vibe", executeVibePhase);
+        if (vibeResult === null) {
+            return { artists: artistsProcessed, tracks: tracksProcessed, audioQueued };
+        }
+        const vibeQueued = vibeResult;
+        const features = await featureDetection.getFeatures();
 
          // Log progress (only if work was done)
          if (artistsProcessed > 0 || tracksProcessed > 0 || audioQueued > 0 || vibeQueued > 0) {
@@ -500,51 +492,18 @@ try {
                 },
                 completionNotificationSent: false, // Reset flag when new work is processed
             });
+
+            // Reset session failure counter when new work begins
+            sessionFailureCount = { artists: 0, tracks: 0, audio: 0 };
         }
 
-        // Send failure notification if there were any failures in this batch
-        const totalFailures =
-            currentBatchFailures.artists.length +
-            currentBatchFailures.tracks.length +
-            currentBatchFailures.audio.length;
+        // Accumulate cycle failures into session counter before resetting
+        sessionFailureCount.artists += currentBatchFailures.artists.length;
+        sessionFailureCount.tracks += currentBatchFailures.tracks.length;
+        sessionFailureCount.audio += currentBatchFailures.audio.length;
 
-        if (totalFailures > 0) {
-            try {
-                const failureCounts =
-                    await enrichmentFailureService.getFailureCounts();
-
-                const { notificationService } =
-                    await import("../services/notificationService");
-                const users = await prisma.user.findMany({
-                    select: { id: true },
-                });
-                for (const user of users) {
-                    await notificationService.create({
-                        userId: user.id,
-                        type: "error",
-                        title: "Enrichment Completed with Errors",
-                        message: `${failureCounts.total} items failed enrichment. Click to view and retry.`,
-                        metadata: {
-                            actionUrl: "/settings#enrichment-failures",
-                            actionLabel: "View Failures",
-                            failureCounts,
-                        },
-                    });
-                }
-
-                logger.debug(
-                    `[Enrichment] Failure notification sent: ${totalFailures} failures in batch`,
-                );
-            } catch (error) {
-                logger.error(
-                    "[Enrichment] Failed to send failure notification:",
-                    error,
-                );
-            }
-
-            // Reset batch failures
-            currentBatchFailures = { artists: [], tracks: [], audio: [] };
-        }
+        // Reset batch failures (failures are viewable in Settings > Enrichment)
+        currentBatchFailures = { artists: [], tracks: [], audio: [] };
 
         // If everything is complete, mark as idle and send notification (only once)
         const progress = await getEnrichmentProgress();
@@ -613,7 +572,26 @@ try {
                     const users = await prisma.user.findMany({
                         select: { id: true },
                     });
+                    const totalSessionFailures =
+                        sessionFailureCount.artists +
+                        sessionFailureCount.tracks +
+                        sessionFailureCount.audio;
+
                     for (const user of users) {
+                        if (totalSessionFailures > 0) {
+                            const parts: string[] = [];
+                            if (sessionFailureCount.artists > 0) parts.push(`${sessionFailureCount.artists} artist(s)`);
+                            if (sessionFailureCount.tracks > 0) parts.push(`${sessionFailureCount.tracks} track(s)`);
+                            if (sessionFailureCount.audio > 0) parts.push(`${sessionFailureCount.audio} audio analysis`);
+
+                            await notificationService.create({
+                                userId: user.id,
+                                type: "error",
+                                title: "Enrichment Completed with Errors",
+                                message: `${totalSessionFailures} failures: ${parts.join(", ")}. Check Settings > Enrichment for details.`,
+                            });
+                        }
+
                         await notificationService.notifySystem(
                             user.id,
                             "Enrichment Complete",
@@ -1035,63 +1013,52 @@ async function queueVibeEmbeddings(): Promise<number> {
       return queued;
  }
 
-interface EnrichmentPhaseResult {
-    result: number;
-    shouldContinue: boolean;
+/**
+ * Check if enrichment should stop and handle state cleanup if stopping.
+ * Returns true if cycle should halt (either stopping or paused).
+ */
+async function shouldHaltCycle(): Promise<boolean> {
+    if (isStopping) {
+        await enrichmentStateService.updateState({
+            status: "idle",
+            currentPhase: null,
+        });
+        isStopping = false;
+        return true;
+    }
+    return isPaused;
 }
 
-async function enrichArtistsPhase(): Promise<EnrichmentPhaseResult> {
+/**
+ * Run a phase and return result. Returns null if cycle should halt.
+ */
+async function runPhase(
+    phaseName: "artists" | "tracks" | "audio" | "vibe",
+    executor: () => Promise<number>,
+): Promise<number | null> {
     await enrichmentStateService.updateState({
         status: "running",
-        currentPhase: "artists",
+        currentPhase: phaseName,
     });
 
-    const result = await enrichArtistsBatch();
+    const result = await executor();
 
-    if (isStopping) {
-        await enrichmentStateService.updateState({
-            status: "idle",
-            currentPhase: null,
-        });
-        isStopping = false;
-        return { result, shouldContinue: false };
+    if (await shouldHaltCycle()) {
+        return null;
     }
 
-    if (isPaused) {
-        return { result, shouldContinue: false };
-    }
-
-    return { result, shouldContinue: true };
+    return result;
 }
 
-async function enrichMoodTagsPhase(): Promise<EnrichmentPhaseResult> {
-    await enrichmentStateService.updateState({
-        currentPhase: "tracks",
-    });
-
-    const result = await enrichTrackTagsBatch();
-
-    if (isStopping) {
-        await enrichmentStateService.updateState({
-            status: "idle",
-            currentPhase: null,
-        });
-        isStopping = false;
-        return { result, shouldContinue: false };
-    }
-
-    if (isPaused) {
-        return { result, shouldContinue: false };
-    }
-
-    return { result, shouldContinue: true };
+async function executeArtistsPhase(): Promise<number> {
+    return enrichArtistsBatch();
 }
 
-async function enrichAudioPhase(): Promise<EnrichmentPhaseResult> {
-    await enrichmentStateService.updateState({
-        currentPhase: "audio",
-    });
+async function executeMoodTagsPhase(): Promise<number> {
+    return enrichTrackTagsBatch();
+}
 
+async function executeAudioPhase(): Promise<number> {
     const audioCompletedBefore = await prisma.track.count({
         where: { analysisStatus: "completed" },
     });
@@ -1111,40 +1078,32 @@ async function enrichAudioPhase(): Promise<EnrichmentPhaseResult> {
         audioAnalysisCleanupService.recordSuccess();
     }
 
-    let result = 0;
     if (audioAnalysisCleanupService.isCircuitOpen()) {
         logger.warn(
             "[Enrichment] Audio analysis circuit breaker OPEN - skipping queue",
         );
-    } else {
-        result = await queueAudioAnalysis();
+        return 0;
     }
 
-    if (isStopping) {
-        await enrichmentStateService.updateState({
-            status: "idle",
-            currentPhase: null,
-        });
-        isStopping = false;
-        return { result, shouldContinue: false };
-    }
-
-    if (isPaused) {
-        return { result, shouldContinue: false };
-    }
-
-    return { result, shouldContinue: true };
+    return queueAudioAnalysis();
 }
 
-async function enrichVibePhase(): Promise<EnrichmentPhaseResult> {
+async function executeVibePhase(): Promise<number> {
     const features = await featureDetection.getFeatures();
     if (!features.vibeEmbeddings) {
-        return { result: 0, shouldContinue: true };
+        return 0;
     }
 
-    await enrichmentStateService.updateState({
-        currentPhase: "vibe",
+    const audioProcessing = await prisma.track.count({
+        where: { analysisStatus: "processing" },
     });
+    const audioQueue = await getRedis().llen("audio:analysis:queue");
+    if (audioProcessing > 0 || audioQueue > 0) {
+        logger.debug(
+            `[Enrichment] Skipping vibe phase - audio still running (${audioProcessing} processing, ${audioQueue} queued)`,
+        );
+        return 0;
+    }
 
     const { reset } = await vibeAnalysisCleanupService.cleanupStaleProcessing();
     if (reset > 0) {
@@ -1153,25 +1112,10 @@ async function enrichVibePhase(): Promise<EnrichmentPhaseResult> {
 
     const result = await queueVibeEmbeddings();
     if (result > 0) {
-        logger.debug(
-            `[ENRICHMENT] Queued ${result} tracks for vibe embedding`
-        );
+        logger.debug(`[ENRICHMENT] Queued ${result} tracks for vibe embedding`);
     }
 
-    if (isStopping) {
-        await enrichmentStateService.updateState({
-            status: "idle",
-            currentPhase: null,
-        });
-        isStopping = false;
-        return { result, shouldContinue: false };
-    }
-
-    if (isPaused) {
-        return { result, shouldContinue: false };
-    }
-
-    return { result, shouldContinue: true };
+    return result;
 }
 
  /**
