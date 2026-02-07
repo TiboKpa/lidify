@@ -5,10 +5,11 @@ import { useAudio } from "@/lib/audio-context";
 import { useAudioState } from "@/lib/audio-state-context";
 import { useToast } from "@/lib/toast-context";
 import { api } from "@/lib/api";
+import type { Audiobook } from "../types";
 
 export function useAudiobookActions(
   audiobookId: string,
-  audiobook: any, // Raw API response
+  audiobook: Audiobook | null,
   refetch: () => void
 ) {
   const {

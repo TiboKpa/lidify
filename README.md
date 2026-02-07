@@ -515,16 +515,39 @@ Connect to your Audiobookshelf instance to browse and listen to audiobooks withi
 
 ### Soulseek
 
-For finding rare tracks and one-offs that aren't available through traditional sources, Lidify has built-in Soulseek support.
+Lidify includes built-in Soulseek support for finding rare tracks and one-offs that aren't available through traditional download sources like Lidarr.
+
+[Soulseek](https://www.slsknet.org/) is a peer-to-peer file sharing network focused on music. Users share their music libraries and can browse/download from each other. Lidify connects directly to the Soulseek network -- no additional software (like slskd) is required.
 
 **Setup:**
 
 1. Go to Settings in Lidify
 2. Navigate to the Soulseek section
-3. Enter your Soulseek username and password
+3. Enter your Soulseek username and password (create an account at [slsknet.org](https://www.slsknet.org/) if you don't have one)
 4. Save your settings
 
-Lidify connects directly to the Soulseek network - no additional software required.
+**How Search Works:**
+
+When you search for music in Lidify's Discovery tab, Soulseek results appear alongside Last.fm and Deezer results. Each result shows the filename, file size, bitrate, and format (FLAC/MP3). Metadata like artist and album is parsed from the file path structure (typically `Artist/Album/01 - Track.flac`).
+
+**How Download Works:**
+
+1. Click the download button on a Soulseek search result
+2. Lidify searches the Soulseek network for the best match (preferring FLAC, high bitrate)
+3. The file is downloaded directly to your music library path
+4. A library scan is triggered to import the new file
+5. Metadata enrichment runs automatically (artist info, mood tags, audio analysis)
+
+You can also configure Soulseek as a download source for playlist imports. In Settings > Downloads, set Soulseek as primary or fallback source. When importing a Spotify/Deezer playlist, tracks not found in your library will be searched and downloaded from Soulseek automatically.
+
+**Download progress** is visible in the Activity Panel (bell icon in the top bar).
+
+**Limitations:**
+
+- Download speed depends on the sharing user's connection and availability
+- Not all tracks will have results -- Soulseek coverage varies by genre and popularity
+- Some users may have slow connections or go offline during transfers
+- Lidify retries with alternative users if a download fails or times out
 
 ---
 

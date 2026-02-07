@@ -214,6 +214,7 @@ export function useMediaSession() {
         currentPodcast,
         playbackType,
         isPlaying,
+        getAbsoluteUrl,
     ]);
 
     useEffect(() => {
@@ -282,7 +283,7 @@ export function useMediaSession() {
                     seek(details.seekTime);
                 }
             });
-        } catch (error) {
+        } catch {
             // Seek actions not supported on this platform
         }
 
@@ -303,7 +304,7 @@ export function useMediaSession() {
                         null
                     );
                     navigator.mediaSession.setActionHandler("seekto", null);
-                } catch (error) {
+                } catch {
                     // Ignore cleanup errors
                 }
             }
@@ -346,5 +347,5 @@ export function useMediaSession() {
                 );
             }
         }
-    }, [currentTime, currentTrack, currentAudiobook, currentPodcast, getAbsoluteUrl]);
+    }, [currentTime, currentTrack, currentAudiobook, currentPodcast]);
 }

@@ -25,7 +25,6 @@ function queueDebugEnabled(): boolean {
 
 function queueDebugLog(message: string, data?: Record<string, unknown>) {
     if (!queueDebugEnabled()) return;
-    // eslint-disable-next-line no-console
     console.log(`[QueueDebug] ${message}`, data || {});
 }
 
@@ -192,28 +191,61 @@ const STORAGE_KEYS = {
     PODCAST_EPISODE_QUEUE: "lidify_podcast_episode_queue",
 };
 
+function readStorage(key: string): string | null {
+    if (typeof window === "undefined") return null;
+    try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function parseStorageJson<T>(key: string, fallback: T): T {
+    const raw = readStorage(key);
+    if (!raw) return fallback;
+    try { return JSON.parse(raw) as T; } catch { return fallback; }
+}
+
 export function AudioStateProvider({ children }: { children: ReactNode }) {
-    const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
-    const [currentAudiobook, setCurrentAudiobook] = useState<Audiobook | null>(
-        null
+    const [currentTrack, setCurrentTrack] = useState<Track | null>(
+        () => parseStorageJson(STORAGE_KEYS.CURRENT_TRACK, null)
     );
-    const [currentPodcast, setCurrentPodcast] = useState<Podcast | null>(null);
+    const [currentAudiobook, setCurrentAudiobook] = useState<Audiobook | null>(
+        () => parseStorageJson(STORAGE_KEYS.CURRENT_AUDIOBOOK, null)
+    );
+    const [currentPodcast, setCurrentPodcast] = useState<Podcast | null>(
+        () => parseStorageJson(STORAGE_KEYS.CURRENT_PODCAST, null)
+    );
     const [playbackType, setPlaybackType] = useState<
         "track" | "audiobook" | "podcast" | null
-    >(null);
-    const [queue, setQueue] = useState<Track[]>([]);
-    const [currentIndex, setCurrentIndex] = useState(0);
-    const [isShuffle, setIsShuffle] = useState(false);
+    >(() => readStorage(STORAGE_KEYS.PLAYBACK_TYPE) as "track" | "audiobook" | "podcast" | null);
+    const [queue, setQueue] = useState<Track[]>(
+        () => parseStorageJson(STORAGE_KEYS.QUEUE, [])
+    );
+    const [currentIndex, setCurrentIndex] = useState(
+        () => { const v = readStorage(STORAGE_KEYS.CURRENT_INDEX); return v ? parseInt(v) : 0; }
+    );
+    const [isShuffle, setIsShuffle] = useState(
+        () => readStorage(STORAGE_KEYS.IS_SHUFFLE) === "true"
+    );
     const [shuffleIndices, setShuffleIndices] = useState<number[]>([]);
-    const [repeatMode, setRepeatMode] = useState<"off" | "one" | "all">("off");
+    const [repeatMode, setRepeatMode] = useState<"off" | "one" | "all">(
+        () => (readStorage(STORAGE_KEYS.REPEAT_MODE) as "off" | "one" | "all") ?? "off"
+    );
     const [repeatOneCount, setRepeatOneCount] = useState(0);
-    const [podcastEpisodeQueue, setPodcastEpisodeQueue] = useState<Episode[] | null>(null);
-    const [playerMode, setPlayerMode] = useState<PlayerMode>("full");
+    const [podcastEpisodeQueue, setPodcastEpisodeQueue] = useState<Episode[] | null>(
+        () => parseStorageJson(STORAGE_KEYS.PODCAST_EPISODE_QUEUE, null)
+    );
+    const [playerMode, setPlayerMode] = useState<PlayerMode>(
+        () => (readStorage(STORAGE_KEYS.PLAYER_MODE) as PlayerMode) ?? "full"
+    );
     const [previousPlayerMode, setPreviousPlayerMode] =
         useState<PlayerMode>("full");
-    const [volume, setVolume] = useState(0.5); // Default to 50%
-    const [isMuted, setIsMuted] = useState(false);
-    const [isHydrated, setIsHydrated] = useState(false);
+    const [volume, setVolume] = useState(
+        () => { const v = readStorage(STORAGE_KEYS.VOLUME); return v ? parseFloat(v) : 0.5; }
+    );
+    const [isMuted, setIsMuted] = useState(
+        () => readStorage(STORAGE_KEYS.IS_MUTED) === "true"
+    );
+    const [isHydrated] = useState(
+        () => typeof window !== "undefined"
+    );
     const [lastServerSync, setLastServerSync] = useState<Date | null>(null);
 
     // Vibe mode state
@@ -222,45 +254,17 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
         useState<AudioFeatures | null>(null);
     const [vibeQueueIds, setVibeQueueIds] = useState<string[]>([]);
 
-    // Restore state from localStorage on mount
+    // Refresh audiobook/podcast progress from API on mount, then sync with server
     useEffect(() => {
         if (typeof window === "undefined") return;
 
-        try {
-            const savedTrack = localStorage.getItem(STORAGE_KEYS.CURRENT_TRACK);
-            const savedAudiobook = localStorage.getItem(
-                STORAGE_KEYS.CURRENT_AUDIOBOOK
-            );
-            const savedPodcast = localStorage.getItem(
-                STORAGE_KEYS.CURRENT_PODCAST
-            );
-            const savedPlaybackType = localStorage.getItem(
-                STORAGE_KEYS.PLAYBACK_TYPE
-            );
-            const savedQueue = localStorage.getItem(STORAGE_KEYS.QUEUE);
-            const savedIndex = localStorage.getItem(STORAGE_KEYS.CURRENT_INDEX);
-            const savedShuffle = localStorage.getItem(STORAGE_KEYS.IS_SHUFFLE);
-            const savedRepeatMode = localStorage.getItem(
-                STORAGE_KEYS.REPEAT_MODE
-            );
-            const savedPodcastQueue = localStorage.getItem(
-                STORAGE_KEYS.PODCAST_EPISODE_QUEUE
-            );
-            const savedPlayerMode = localStorage.getItem(
-                STORAGE_KEYS.PLAYER_MODE
-            );
-            const savedVolume = localStorage.getItem(STORAGE_KEYS.VOLUME);
-            const savedMuted = localStorage.getItem(STORAGE_KEYS.IS_MUTED);
-
-            if (savedTrack) setCurrentTrack(JSON.parse(savedTrack));
-
-            // For audiobooks, restore then fetch fresh progress
-            if (savedAudiobook) {
+        // Fetch fresh audiobook progress
+        const savedAudiobook = readStorage(STORAGE_KEYS.CURRENT_AUDIOBOOK);
+        if (savedAudiobook) {
+            try {
                 const audiobookData = JSON.parse(savedAudiobook);
-                setCurrentAudiobook(audiobookData);
-
                 api.getAudiobook(audiobookData.id)
-                    .then((audiobook: any) => {
+                    .then((audiobook: { progress?: { currentTime: number; progress: number; isFinished: boolean } }) => {
                         if (audiobook && audiobook.progress) {
                             setCurrentAudiobook({
                                 ...audiobookData,
@@ -268,25 +272,26 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
                             });
                         }
                     })
-                    .catch((err: any) => {
+                    .catch((err: unknown) => {
                         console.error(
                             "[AudioState] Failed to refresh audiobook progress:",
                             err
                         );
                     });
-            }
+            } catch { /* ignore parse errors */ }
+        }
 
-            // For podcasts, restore then fetch fresh progress
-            if (savedPodcast) {
+        // Fetch fresh podcast progress
+        const savedPodcast = readStorage(STORAGE_KEYS.CURRENT_PODCAST);
+        if (savedPodcast) {
+            try {
                 const podcastData = JSON.parse(savedPodcast);
-                setCurrentPodcast(podcastData);
-
                 const [podcastId, episodeId] = podcastData.id.split(":");
                 if (podcastId && episodeId) {
                     api.getPodcast(podcastId)
-                        .then((podcast: any) => {
+                        .then((podcast: { title: string; coverUrl: string; episodes?: Episode[] }) => {
                             const episode = podcast.episodes?.find(
-                                (ep: any) => ep.id === episodeId
+                                (ep: Episode) => ep.id === episodeId
                             );
                             if (episode && episode.progress) {
                                 setCurrentPodcast({
@@ -295,32 +300,15 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
                                 });
                             }
                         })
-                        .catch((err: any) => {
+                        .catch((err: unknown) => {
                             console.error(
                                 "[AudioState] Failed to refresh podcast progress:",
                                 err
                             );
                         });
                 }
-            }
-
-            if (savedPlaybackType)
-                setPlaybackType(
-                    savedPlaybackType as "track" | "audiobook" | "podcast"
-                );
-            if (savedQueue) setQueue(JSON.parse(savedQueue));
-            if (savedIndex) setCurrentIndex(parseInt(savedIndex));
-            if (savedShuffle) setIsShuffle(savedShuffle === "true");
-            if (savedRepeatMode)
-                setRepeatMode(savedRepeatMode as "off" | "one" | "all");
-            if (savedPodcastQueue) setPodcastEpisodeQueue(JSON.parse(savedPodcastQueue));
-            if (savedVolume) setVolume(parseFloat(savedVolume));
-            if (savedMuted) setIsMuted(savedMuted === "true");
-            if (savedPlayerMode) setPlayerMode(savedPlayerMode as PlayerMode);
-        } catch (error) {
-            console.error("[AudioState] Failed to restore state:", error);
+            } catch { /* ignore parse errors */ }
         }
-        setIsHydrated(true);
 
         // Load playback state from server
         api.getPlaybackState()
@@ -366,9 +354,9 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
                 ) {
                     const [podcastId, episodeId] =
                         serverState.podcastId.split(":");
-                    api.getPodcast(podcastId).then((podcast) => {
+                    api.getPodcast(podcastId).then((podcast: { title: string; coverUrl: string; episodes?: Episode[] }) => {
                         const episode = podcast.episodes?.find(
-                            (ep: any) => ep.id === episodeId
+                            (ep: Episode) => ep.id === episodeId
                         );
                         if (episode) {
                             setCurrentPodcast({
@@ -501,8 +489,8 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
                     isShuffle,
                     updatedAt: result.updatedAt,
                 });
-            } catch (err: any) {
-                if (err.message !== "Not authenticated") {
+            } catch (err: unknown) {
+                if (err instanceof Error && err.message !== "Not authenticated") {
                     console.error(
                         "[AudioState] Failed to save to server:",
                         err
@@ -587,7 +575,7 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
                                 setCurrentIndex(serverState.currentIndex || 0);
                                 setIsShuffle(serverState.isShuffle || false);
                             }
-                        } catch (trackErr) {
+                        } catch {
                             if (!mounted) return;
                             await api.clearPlaybackState().catch(() => {});
                             setCurrentTrack(null);
@@ -616,10 +604,10 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
                     ) {
                         const [podcastId, episodeId] =
                             serverState.podcastId.split(":");
-                        const podcast = await api.getPodcast(podcastId);
+                        const podcast: { title: string; coverUrl: string; episodes?: Episode[] } = await api.getPodcast(podcastId);
                         if (!mounted) return;
                         const episode = podcast.episodes?.find(
-                            (ep: any) => ep.id === episodeId
+                            (ep: Episode) => ep.id === episodeId
                         );
                         if (episode) {
                             setCurrentPodcast({
@@ -657,8 +645,8 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
 
                     setLastServerSync(serverUpdatedAt);
                 }
-            } catch (err: any) {
-                if (err.message === "Not authenticated") {
+            } catch (err: unknown) {
+                if (err instanceof Error && err.message === "Not authenticated") {
                     isAuthenticated = false;
                     clearInterval(pollInterval);
                 }
@@ -680,6 +668,8 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
         currentAudiobook?.id,
         currentPodcast?.id,
         queue,
+        currentIndex,
+        isShuffle,
         lastServerSync,
     ]);
 

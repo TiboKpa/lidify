@@ -3,8 +3,6 @@ import Image from "next/image";
 import { Music } from "lucide-react";
 import { api } from "@/lib/api";
 import { Artist, DiscoverResult } from "../types";
-import { formatListeners } from "@/lib/format";
-
 interface TopResultProps {
     libraryArtist?: Artist;
     discoveryArtist?: DiscoverResult;

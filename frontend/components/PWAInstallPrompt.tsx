@@ -11,7 +11,10 @@ interface BeforeInstallPromptEvent extends Event {
 export function PWAInstallPrompt() {
     const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
     const [showPrompt, setShowPrompt] = useState(false);
-    const [isIOS, setIsIOS] = useState(false);
+    const [isIOS] = useState(() => {
+        if (typeof window === "undefined") return false;
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as unknown as Record<string, unknown>).MSStream;
+    });
 
     const isDismissedRecently = (): boolean => {
         const dismissedAt = localStorage.getItem("pwa-prompt-dismissed");
@@ -32,10 +35,6 @@ export function PWAInstallPrompt() {
             return;
         }
 
-        // Check for iOS
-        const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-        setIsIOS(isIOSDevice);
-
         // Listen for beforeinstallprompt (Chrome, Edge, etc.)
         const handleBeforeInstallPrompt = (e: Event) => {
             e.preventDefault();
@@ -51,7 +50,7 @@ export function PWAInstallPrompt() {
         window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
 
         // For iOS, show instructions after delay if on mobile
-        if (isIOSDevice) {
+        if (isIOS) {
             setTimeout(() => {
                 if (!isDismissedRecently()) {
                     setShowPrompt(true);
@@ -62,7 +61,7 @@ export function PWAInstallPrompt() {
         return () => {
             window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
         };
-    }, []);
+    }, [isIOS]);
 
     const handleInstall = async () => {
         if (!deferredPrompt) return;

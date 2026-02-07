@@ -16,6 +16,7 @@ export default function OnboardingPage() {
     const [loading, setLoading] = useState(false);
     const [initialLoading, setInitialLoading] = useState(true);
     const [error, setError] = useState("");
+    const [success, setSuccess] = useState("");
     const hasCheckedSession = useRef(false);
     const showPasswordMismatch = error === "Passwords don't match";
     const showPasswordTooShort =
@@ -63,6 +64,7 @@ export default function OnboardingPage() {
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
+        setSuccess("");
 
         if (password !== confirmPassword) {
             setError("Passwords don't match");
@@ -76,7 +78,7 @@ export default function OnboardingPage() {
 
         setLoading(true);
         try {
-            const response = await api.post<{ token: string; user: any }>(
+            const response = await api.post<{ token: string; user: { id: string; username: string } }>(
                 "/onboarding/register",
                 { username, password }
             );
@@ -85,18 +87,15 @@ export default function OnboardingPage() {
                 api.setToken(response.token);
             }
             setStep(2);
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
             // Check if user already exists
-            if (err.message?.includes("already taken")) {
+            if (message?.includes("already taken")) {
                 setError(
                     "Username already taken. If this is you, please refresh and continue where you left off."
                 );
             } else {
-                setError(
-                    err.response?.data?.error ||
-                        err.message ||
-                        "Failed to create account"
-                );
+                setError(message || "Failed to create account");
             }
         } finally {
             setLoading(false);
@@ -107,10 +106,10 @@ export default function OnboardingPage() {
         type: "lidarr" | "audiobookshelf" | "soulseek"
     ) => {
         setError("");
+        setSuccess("");
         setLoading(true);
 
         try {
-            // Use dedicated test endpoints that actually verify the connection
             if (type === "lidarr") {
                 if (!lidarr.url || !lidarr.apiKey) {
                     throw new Error("URL and API key are required");
@@ -136,13 +135,9 @@ export default function OnboardingPage() {
                     password: soulseek.password,
                 });
             }
-            setError(`${type} connected successfully!`);
-        } catch (err: any) {
-            const errorMessage =
-                err.response?.data?.error ||
-                err.response?.data?.details ||
-                err.message ||
-                `Failed to connect to ${type}`;
+            setSuccess(`${type} connected successfully!`);
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : `Failed to connect to ${type}`;
             setError(errorMessage);
         } finally {
             setLoading(false);
@@ -151,6 +146,7 @@ export default function OnboardingPage() {
 
     const handleNextStep = async () => {
         setError("");
+        setSuccess("");
         setLoading(true);
 
         try {
@@ -166,9 +162,9 @@ export default function OnboardingPage() {
                 await api.post("/onboarding/complete");
                 router.push("/sync");
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             setError(
-                err.response?.data?.error || "Failed to save configuration"
+                err instanceof Error ? err.message : "Failed to save configuration"
             );
         } finally {
             setLoading(false);
@@ -269,7 +265,7 @@ export default function OnboardingPage() {
                                                 Create Your Account
                                             </h2>
                                             <p className="text-white/60">
-                                                Let's get you set up with your
+                                                Let&apos;s get you set up with your
                                                 personal music library
                                             </p>
                                         </div>
@@ -510,42 +506,15 @@ export default function OnboardingPage() {
                                             />
                                         </div>
 
+                                        {success && (
+                                            <div className="flex items-center gap-2 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+                                                <p className="text-sm text-green-500">{success}</p>
+                                            </div>
+                                        )}
+
                                         {error && (
-                                            <div
-                                                className={`flex items-center gap-2 p-4 rounded-lg ${
-                                                    error.includes(
-                                                        "successfully"
-                                                    )
-                                                        ? "bg-green-500/10 border border-green-500/20"
-                                                        : "bg-red-500/10 border border-red-500/20"
-                                                }`}
-                                            >
-                                                <span
-                                                    className={
-                                                        error.includes(
-                                                            "successfully"
-                                                        )
-                                                            ? "text-green-500"
-                                                            : "text-red-500"
-                                                    }
-                                                >
-                                                    {error.includes(
-                                                        "successfully"
-                                                    )
-                                                        ? ""
-                                                        : ""}
-                                                </span>
-                                                <p
-                                                    className={`text-sm ${
-                                                        error.includes(
-                                                            "successfully"
-                                                        )
-                                                            ? "text-green-500"
-                                                            : "text-red-500"
-                                                    }`}
-                                                >
-                                                    {error}
-                                                </p>
+                                            <div className="flex items-center gap-2 p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+                                                <p className="text-sm text-red-500">{error}</p>
                                             </div>
                                         )}
 
@@ -619,7 +588,7 @@ export default function OnboardingPage() {
                                                             </span>
                                                         </div>
                                                         <p className="text-sm text-white/50 ml-7">
-                                                            Creates audio fingerprints that capture the overall "vibe" of each track, enabling "find similar tracks" functionality.
+                                                            Creates audio fingerprints that capture the overall &quot;vibe&quot; of each track, enabling &quot;find similar tracks&quot; functionality.
                                                         </p>
                                                     </div>
                                                 </div>

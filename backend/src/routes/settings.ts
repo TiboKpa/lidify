@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { logger } from "../utils/logger";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requireAdmin } from "../middleware/auth";
 import { prisma } from "../utils/db";
 import { z } from "zod";
 import { staleJobCleanupService } from "../services/staleJobCleanup";
@@ -73,7 +73,7 @@ router.post("/", async (req, res) => {
 });
 
 // POST /settings/cleanup-stale-jobs
-router.post("/cleanup-stale-jobs", async (req, res) => {
+router.post("/cleanup-stale-jobs", requireAdmin, async (req, res) => {
     try {
         const result = await staleJobCleanupService.cleanupAll();
 

@@ -29,7 +29,7 @@ interface SeekSliderProps {
 export function SeekSlider({
     progress,
     duration,
-    currentTime,
+    currentTime: _currentTime,
     onSeek,
     canSeek,
     hasMedia,

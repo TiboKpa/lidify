@@ -88,7 +88,6 @@ router.post("/login", async (req, res) => {
                 return res.status(200).json({
                     requires2FA: true,
                     message: "2FA token required",
-                    userId: user.id, // Send userId for next 2FA request
                 });
             }
 

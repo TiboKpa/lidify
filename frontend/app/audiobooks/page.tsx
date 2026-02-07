@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -46,7 +45,7 @@ type SortType = "title" | "author" | "recent" | "series";
 
 export default function AudiobooksPage() {
     const router = useRouter();
-    const { isAuthenticated } = useAuth();
+    useAuth();
     const { toast } = useToast();
     const { currentAudiobook } = useAudioState();
     const { pause } = useAudioControls();
@@ -67,9 +66,10 @@ export default function AudiobooksPage() {
         (!audiobooksData ||
             !("configured" in audiobooksData) ||
             audiobooksData.configured !== false);
-    const audiobooks: Audiobook[] = Array.isArray(audiobooksData)
-        ? audiobooksData
-        : [];
+    const audiobooks: Audiobook[] = useMemo(
+        () => (Array.isArray(audiobooksData) ? audiobooksData : []),
+        [audiobooksData]
+    );
 
     // Clear player state if Audiobookshelf is disabled
     useEffect(() => {
@@ -181,10 +181,13 @@ export default function AudiobooksPage() {
         return filteredBooks.slice(start, start + itemsPerPage);
     }, [filteredBooks, currentPage, itemsPerPage]);
     
-    // Reset to page 1 when filters change
-    useEffect(() => {
+    // Reset to page 1 when filters change (render-time adjustment)
+    const filterKey = `${filter}-${sortBy}-${selectedGenre}-${groupBySeries}`;
+    const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+    if (prevFilterKey !== filterKey) {
+        setPrevFilterKey(filterKey);
         setCurrentPage(1);
-    }, [filter, sortBy, selectedGenre, groupBySeries]);
+    }
 
     // Get series and standalone books for artist-style view
     const getSeriesAndStandalone = () => {

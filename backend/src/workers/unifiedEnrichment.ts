@@ -141,10 +141,11 @@ async function withTimeout<T>(
     timeoutMs: number,
     errorMessage: string,
 ): Promise<T> {
+    let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
+        timer = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
     });
-    return Promise.race([promise, timeoutPromise]);
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -450,6 +451,10 @@ async function runEnrichmentCycle(fullMode: boolean): Promise<{
             return { artists: artistsProcessed, tracks: tracksProcessed, audioQueued };
         }
         const vibeQueued = vibeResult;
+
+        // Podcast refresh phase -- only runs if subscriptions exist
+        await runPhase("podcasts", executePodcastRefreshPhase);
+
         const features = await featureDetection.getFeatures();
 
          // Log progress (only if work was done)
@@ -1033,7 +1038,7 @@ async function shouldHaltCycle(): Promise<boolean> {
  * Run a phase and return result. Returns null if cycle should halt.
  */
 async function runPhase(
-    phaseName: "artists" | "tracks" | "audio" | "vibe",
+    phaseName: "artists" | "tracks" | "audio" | "vibe" | "podcasts",
     executor: () => Promise<number>,
 ): Promise<number | null> {
     await enrichmentStateService.updateState({
@@ -1086,6 +1091,52 @@ async function executeAudioPhase(): Promise<number> {
     }
 
     return queueAudioAnalysis();
+}
+
+async function executePodcastRefreshPhase(): Promise<number> {
+    const podcastCount = await prisma.podcast.count();
+    if (podcastCount === 0) return 0;
+
+    // Only refresh once per hour (check oldest lastRefreshed)
+    const ONE_HOUR = 60 * 60 * 1000;
+    const staleThreshold = new Date(Date.now() - ONE_HOUR);
+    const stalePodcasts = await prisma.podcast.findMany({
+        where: {
+            lastRefreshed: { lt: staleThreshold },
+        },
+        select: { id: true, title: true },
+    });
+
+    if (stalePodcasts.length === 0) return 0;
+
+    logger.debug(`[Enrichment] Refreshing ${stalePodcasts.length} podcast feeds...`);
+
+    const { refreshPodcastFeed } = await import("../routes/podcasts");
+    let refreshed = 0;
+
+    for (const podcast of stalePodcasts) {
+        if (isPaused || isStopping) break;
+
+        try {
+            const result = await withTimeout(
+                refreshPodcastFeed(podcast.id),
+                30000,
+                `Timeout refreshing podcast: ${podcast.title}`,
+            );
+            if (result.newEpisodesCount > 0) {
+                logger.debug(`   [Podcast] ${podcast.title}: ${result.newEpisodesCount} new episodes`);
+            }
+            refreshed++;
+        } catch (error) {
+            logger.error(`   [Podcast] Failed to refresh ${podcast.title}:`, error);
+        }
+    }
+
+    if (refreshed > 0) {
+        logger.debug(`[Enrichment] Refreshed ${refreshed} podcast feeds`);
+    }
+
+    return refreshed;
 }
 
 async function executeVibePhase(): Promise<number> {
@@ -1234,7 +1285,10 @@ export async function getEnrichmentProgress() {
         // Overall status
         coreComplete, // True when artists + track tags are done
         isFullyComplete:
-            coreComplete && audioPending === 0 && audioProcessing === 0,
+            coreComplete &&
+            audioPending === 0 &&
+            audioProcessing === 0 &&
+            clapCompleted + clapFailed >= trackTotal,
     };
 }
 

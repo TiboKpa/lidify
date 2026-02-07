@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Trash2 } from "lucide-react";
-import { SettingsSection, SettingsRow, SettingsInput, SettingsSelect } from "../ui";
+import { SettingsSection, SettingsInput, SettingsSelect } from "../ui";
 import { Modal } from "@/components/ui/Modal";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
@@ -36,7 +36,7 @@ export function UserManagementSection() {
     const loadUsers = async () => {
         try {
             setLoading(true);
-            const data = await api.get("/auth/users");
+            const data = await api.get<User[]>("/auth/users");
             setUsers(data);
         } catch (error) {
             console.error("Failed to load users:", error);
@@ -66,9 +66,9 @@ export function UserManagementSection() {
             setNewPassword("");
             setNewRole("user");
             loadUsers();
-        } catch (error: any) {
+        } catch (error: unknown) {
             setCreateStatus("error");
-            setCreateMessage(error.message || "Failed");
+            setCreateMessage(error instanceof Error ? error.message : "Failed");
         } finally {
             setCreating(false);
         }
@@ -82,9 +82,9 @@ export function UserManagementSection() {
             setDeleteMessage("Deleted");
             setConfirmDelete(null);
             loadUsers();
-        } catch (error: any) {
+        } catch (error: unknown) {
             setDeleteStatus("error");
-            setDeleteMessage(error.message || "Failed");
+            setDeleteMessage(error instanceof Error ? error.message : "Failed");
         }
     };
 

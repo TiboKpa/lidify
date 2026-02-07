@@ -1004,17 +1004,10 @@ interface Genre {
     picture?: string;
 }
 
-interface GenreWithRadios {
-    id: number;
-    name: string;
-    radios: PlaylistPreview[];
-}
-
 interface BrowseAllResponse {
     playlists: PlaylistPreview[];
     radios: PlaylistPreview[];
     genres: Genre[];
-    radiosByGenre: GenreWithRadios[];
 }
 
 /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
@@ -572,7 +572,7 @@ export default function VibePage() {
 
 function VibePageContent() {
     const { playTracks } = useAudio();
-    const { setVibeMode, setVibeSourceFeatures, setVibeQueueIds, currentTrack, vibeMode } = useAudioState();
+    const { setVibeMode, setVibeSourceFeatures, setVibeQueueIds, currentTrack } = useAudioState();
     const [libraryTracks, setLibraryTracks] = useState<LibraryTrack[]>([]);
     const [sourceTrack, setSourceTrack] = useState<TrackData | null>(null);
     const [similarTracks, setSimilarTracks] = useState<TrackData[]>([]);

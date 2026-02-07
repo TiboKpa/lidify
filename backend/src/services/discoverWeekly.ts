@@ -1037,9 +1037,7 @@ export class DiscoverWeeklyService {
                 }
 
                 // Shuffle and take what we need
-                const uniqueAnchors = Array.from(anchorsByAlbum.values()).sort(
-                    () => Math.random() - 0.5
-                );
+                const uniqueAnchors = shuffleArray(Array.from(anchorsByAlbum.values()));
                 libraryAnchors = uniqueAnchors.slice(0, anchorCount);
 
                 // Mark these as library anchors and track used albums
@@ -1098,9 +1096,7 @@ export class DiscoverWeeklyService {
                     }
                 }
 
-                const shuffledPopular = Array.from(popByAlbum.values()).sort(
-                    () => Math.random() - 0.5
-                );
+                const shuffledPopular = shuffleArray(Array.from(popByAlbum.values()));
                 const additionalAnchors = shuffledPopular.slice(0, needed);
 
                 for (const track of additionalAnchors) {

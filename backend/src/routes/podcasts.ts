@@ -787,78 +787,22 @@ router.get("/:id/refresh", async (req, res) => {
         logger.debug(`\n [PODCAST] Refresh request`);
         logger.debug(`   Podcast ID: ${id}`);
 
-        const podcast = await prisma.podcast.findUnique({
-            where: { id },
-        });
-
-        if (!podcast) {
-            return res.status(404).json({ error: "Podcast not found" });
-        }
-
-        // Parse RSS feed
-        logger.debug(`   Parsing RSS feed...`);
-        const { podcast: podcastData, episodes } =
-            await rssParserService.parseFeed(podcast.feedUrl);
-
-        // Update podcast metadata
-        await prisma.podcast.update({
-            where: { id },
-            data: {
-                title: podcastData.title,
-                author: podcastData.author,
-                description: podcastData.description,
-                imageUrl: podcastData.imageUrl,
-                language: podcastData.language,
-                explicit: podcastData.explicit || false,
-                episodeCount: episodes.length,
-                lastRefreshed: new Date(),
-            },
-        });
-
-        // Add new episodes (skip duplicates)
-        let newEpisodesCount = 0;
-        for (const ep of episodes) {
-            const existing = await prisma.podcastEpisode.findUnique({
-                where: {
-                    podcastId_guid: {
-                        podcastId: id,
-                        guid: ep.guid,
-                    },
-                },
-            });
-
-            if (!existing) {
-                await prisma.podcastEpisode.create({
-                    data: {
-                        podcastId: id,
-                        guid: ep.guid,
-                        title: ep.title,
-                        description: ep.description,
-                        audioUrl: ep.audioUrl,
-                        duration: ep.duration,
-                        publishedAt: ep.publishedAt,
-                        episodeNumber: ep.episodeNumber,
-                        season: ep.season,
-                        imageUrl: ep.imageUrl,
-                        fileSize: ep.fileSize,
-                        mimeType: ep.mimeType,
-                    },
-                });
-                newEpisodesCount++;
-            }
-        }
+        const result = await refreshPodcastFeed(id);
 
         logger.debug(
-            `   Refresh complete. ${newEpisodesCount} new episodes added.`
+            `   Refresh complete. ${result.newEpisodesCount} new episodes added.`
         );
 
         res.json({
             success: true,
-            newEpisodesCount,
-            totalEpisodes: episodes.length,
-            message: `Found ${newEpisodesCount} new episodes`,
+            newEpisodesCount: result.newEpisodesCount,
+            totalEpisodes: result.totalEpisodes,
+            message: `Found ${result.newEpisodesCount} new episodes`,
         });
     } catch (error: any) {
+        if (error.message?.includes("not found")) {
+            return res.status(404).json({ error: "Podcast not found" });
+        }
         logger.error("Error refreshing podcast:", error);
         res.status(500).json({
             error: "Failed to refresh podcast",
@@ -1656,5 +1600,59 @@ router.get("/episodes/:episodeId/cover", async (req, res) => {
         });
     }
 });
+
+/**
+ * Refresh a single podcast feed -- shared logic used by both the route handler
+ * and the enrichment worker's automatic refresh phase.
+ */
+export async function refreshPodcastFeed(podcastId: string): Promise<{ newEpisodesCount: number; totalEpisodes: number }> {
+    const podcast = await prisma.podcast.findUnique({ where: { id: podcastId } });
+    if (!podcast) throw new Error(`Podcast ${podcastId} not found`);
+
+    const { podcast: podcastData, episodes } = await rssParserService.parseFeed(podcast.feedUrl);
+
+    await prisma.podcast.update({
+        where: { id: podcastId },
+        data: {
+            title: podcastData.title,
+            author: podcastData.author,
+            description: podcastData.description,
+            imageUrl: podcastData.imageUrl,
+            language: podcastData.language,
+            explicit: podcastData.explicit || false,
+            episodeCount: episodes.length,
+            lastRefreshed: new Date(),
+        },
+    });
+
+    let newEpisodesCount = 0;
+    for (const ep of episodes) {
+        const existing = await prisma.podcastEpisode.findUnique({
+            where: { podcastId_guid: { podcastId, guid: ep.guid } },
+        });
+
+        if (!existing) {
+            await prisma.podcastEpisode.create({
+                data: {
+                    podcastId,
+                    guid: ep.guid,
+                    title: ep.title,
+                    description: ep.description,
+                    audioUrl: ep.audioUrl,
+                    duration: ep.duration,
+                    publishedAt: ep.publishedAt,
+                    episodeNumber: ep.episodeNumber,
+                    season: ep.season,
+                    imageUrl: ep.imageUrl,
+                    fileSize: ep.fileSize,
+                    mimeType: ep.mimeType,
+                },
+            });
+            newEpisodesCount++;
+        }
+    }
+
+    return { newEpisodesCount, totalEpisodes: episodes.length };
+}
 
 export default router;

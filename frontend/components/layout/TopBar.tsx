@@ -38,7 +38,7 @@ export function TopBar() {
     const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const queryClient = useQueryClient();
 
-    const { jobStatus, isPolling } = useJobStatus(scanJobId, "scan", {
+    const { isPolling } = useJobStatus(scanJobId, "scan", {
         onComplete: () => {
             // Refresh Activity Panel and enrichment progress after scan
             queryClient.invalidateQueries({ queryKey: ["notifications"] });

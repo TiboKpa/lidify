@@ -4,7 +4,6 @@ import { useState, lazy, Suspense } from "react";
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
 import { RefreshCw, AudioWaveform } from "lucide-react";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
-import { Badge } from "@/components/ui/Badge";
 import { useHomeData } from "@/features/home/hooks/useHomeData";
 import { HomeHero } from "@/features/home/components/HomeHero";
 import { SectionHeader } from "@/features/home/components/SectionHeader";

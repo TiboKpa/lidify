@@ -34,7 +34,6 @@ function queueDebugEnabled(): boolean {
 
 function queueDebugLog(message: string, data?: Record<string, unknown>) {
     if (!queueDebugEnabled()) return;
-    // eslint-disable-next-line no-console
     console.log(`[QueueDebug] ${message}`, data || {});
 }
 
@@ -326,7 +325,7 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
             pause();
             state.setPodcastEpisodeQueue(null);
         }
-    }, [state.podcastEpisodeQueue, state.currentPodcast, playPodcast, pause, state.setPodcastEpisodeQueue]);
+    }, [state, playPodcast, pause]);
 
     const resume = useCallback(() => {
         playback.setIsPlaying(true);
@@ -468,8 +467,6 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
                     Math.max(0, plannedInsertAt),
                     prevQueue.length
                 );
-                // Keep existing log payload shape: it expects insertAt === currentIdx + 1.
-                const currentIdx = insertAt - 1;
                 const newQueue = [...prevQueue];
                 newQueue.splice(insertAt, 0, track);
                 upNextInsertRef.current = insertAt + 1;
@@ -516,7 +513,6 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
                     const newIndices = [...shifted];
                     newIndices.splice(insertPos, 0, insertAt);
                     shuffleInsertPosRef.current = insertPos + 1;
-                    const newIndex = insertAt;
                     const currentIdx = playingIdx;
                     queueDebugLog("addToQueue() shuffleIndices updated", {
                         currentIdx,
@@ -560,6 +556,15 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
 
                 return newQueue;
             });
+
+            // Update shuffle indices: remove the index and shift remaining
+            if (state.isShuffle) {
+                state.setShuffleIndices((prev) => {
+                    return prev
+                        .filter((i) => i !== index)
+                        .map((i) => (i > index ? i - 1 : i));
+                });
+            }
         },
         [state, playback]
     );

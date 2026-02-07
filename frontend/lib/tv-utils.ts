@@ -32,12 +32,7 @@ export function isAndroidTV(): boolean {
 
 // React hook to detect Android TV (with SSR safety)
 export function useIsTV(): boolean {
-    const [isTV, setIsTV] = useState(false);
-
-    useEffect(() => {
-        setIsTV(isAndroidTV());
-    }, []);
-
+    const [isTV] = useState(() => isAndroidTV());
     return isTV;
 }
 

@@ -16,7 +16,8 @@ import { toast } from "sonner";
 import { useArtistData } from "@/features/artist/hooks/useArtistData";
 import { useArtistActions } from "@/features/artist/hooks/useArtistActions";
 import { useDownloadActions } from "@/features/artist/hooks/useDownloadActions";
-import { usePreviewPlayer } from "@/features/artist/hooks/usePreviewPlayer";
+import type { Track, Album } from "@/features/artist/types";
+import { useTrackPreview } from "@/hooks/useTrackPreview";
 
 // Components
 import { ArtistHero } from "@/features/artist/components/ArtistHero";
@@ -50,7 +51,7 @@ export default function ArtistPage() {
     // Action hooks
     const { playAll, shufflePlay } = useArtistActions();
     const { downloadArtist, downloadAlbum } = useDownloadActions();
-    const { previewTrack, previewPlaying, handlePreview } = usePreviewPlayer();
+    const { previewTrack, previewPlaying, handlePreview } = useTrackPreview();
 
     // Separate owned and available albums
     const ownedAlbums = albums.filter((a) => a.owned);
@@ -78,7 +79,7 @@ export default function ArtistPage() {
         try {
             const albumData = await api.getAlbum(albumId);
             if (albumData.tracks && albumData.tracks.length > 0) {
-                const tracksWithAlbum = albumData.tracks.map((track: any) => ({
+                const tracksWithAlbum = albumData.tracks.map((track: Record<string, unknown>) => ({
                     ...track,
                     album: {
                         id: albumData.id,
@@ -90,18 +91,17 @@ export default function ArtistPage() {
                 playTracks(tracksWithAlbum, 0);
                 toast.success(`Playing ${albumTitle}`);
             }
-        } catch (error) {
-            console.error("Failed to play album:", error);
+        } catch {
             toast.error("Failed to play album");
         }
     }
 
     // Play track handler (for popular tracks)
-    function handlePlayTrack(track: any) {
+    function handlePlayTrack(track: Track) {
         if (!artist?.topTracks) return;
 
-        const playableTracks = artist.topTracks.filter((t: any) => t.album?.id);
-        const formattedTracks = playableTracks.map((t: any) => ({
+        const playableTracks = artist.topTracks.filter((t: Track) => t.album?.id);
+        const formattedTracks = playableTracks.map((t: Track) => ({
             id: t.id,
             title: t.title,
             artist: { name: artist.name, id: artist.id },
@@ -114,13 +114,13 @@ export default function ArtistPage() {
         }));
 
         const startIndex = formattedTracks.findIndex(
-            (t: any) => t.id === track.id,
+            (t) => t.id === track.id,
         );
         playTracks(formattedTracks, Math.max(0, startIndex));
     }
 
     // Download album handler
-    function handleDownloadAlbum(album: any, e: React.MouseEvent) {
+    function handleDownloadAlbum(album: Album, e: React.MouseEvent) {
         downloadAlbum(album, artist?.name || "", e);
     }
 
@@ -143,8 +143,7 @@ export default function ArtistPage() {
                     "Not enough similar music in your library for artist radio",
                 );
             }
-        } catch (error) {
-            console.error("Failed to start artist radio:", error);
+        } catch {
             toast.error("Failed to start artist radio");
         }
     }
@@ -164,7 +163,7 @@ export default function ArtistPage() {
                         Artist Not Found
                     </h1>
                     <p className="text-neutral-400">
-                        This artist isn't in your library yet.
+                        This artist isn&apos;t in your library yet.
                     </p>
                     <button
                         onClick={() => router.back()}
@@ -238,7 +237,7 @@ export default function ArtistPage() {
                             onPlayTrack={handlePlayTrack}
                             previewTrack={previewTrack}
                             previewPlaying={previewPlaying}
-                            onPreview={(track: any, e: React.MouseEvent) =>
+                            onPreview={(track: Track, e: React.MouseEvent) =>
                                 handlePreview(track, artist.name, e)
                             }
                         />

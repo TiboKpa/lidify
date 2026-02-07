@@ -9,7 +9,7 @@ import {
     useMemo,
     useCallback,
 } from "react";
-import { useDownloadStatus } from "@/hooks/useDownloadStatus";
+import { useDownloadStatus, DownloadJob } from "@/hooks/useDownloadStatus";
 import { useAuth } from "@/lib/auth-context";
 
 interface PendingDownload {
@@ -23,10 +23,10 @@ interface PendingDownload {
 interface DownloadContextType {
     pendingDownloads: PendingDownload[];
     downloadStatus: {
-        activeDownloads: any[];
-        recentDownloads: any[];
+        activeDownloads: DownloadJob[];
+        recentDownloads: DownloadJob[];
         hasActiveDownloads: boolean;
-        failedDownloads: any[];
+        failedDownloads: DownloadJob[];
     };
     addPendingDownload: (
         type: "artist" | "album",
@@ -51,41 +51,38 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     const { isAuthenticated } = useAuth();
     const downloadStatus = useDownloadStatus(15000, isAuthenticated);
 
-    // Sync pending downloads with actual download status
-    useEffect(() => {
-        // Remove pending downloads that have completed or failed
+    // Sync pending downloads with actual download status (render-time adjustment)
+    const [prevActiveDownloads, setPrevActiveDownloads] = useState(downloadStatus.activeDownloads);
+    const [prevRecentDownloads, setPrevRecentDownloads] = useState(downloadStatus.recentDownloads);
+    const [prevFailedDownloads, setPrevFailedDownloads] = useState(downloadStatus.failedDownloads);
+
+    if (
+        prevActiveDownloads !== downloadStatus.activeDownloads ||
+        prevRecentDownloads !== downloadStatus.recentDownloads ||
+        prevFailedDownloads !== downloadStatus.failedDownloads
+    ) {
+        setPrevActiveDownloads(downloadStatus.activeDownloads);
+        setPrevRecentDownloads(downloadStatus.recentDownloads);
+        setPrevFailedDownloads(downloadStatus.failedDownloads);
+
         setPendingDownloads((prev) => {
-            return prev.filter((pending) => {
-                // Check if this MBID has an active job being tracked by API
+            const next = prev.filter((pending) => {
                 const hasActiveJob = downloadStatus.activeDownloads.some(
                     (job) => job.targetMbid === pending.mbid
                 );
+                if (hasActiveJob) return false;
 
-                // If job is now being tracked by the API, remove from local pending
-                if (hasActiveJob) {
-                    return false;
-                }
-
-                // Check if this MBID has completed or failed
                 const matchingJob = [
                     ...downloadStatus.recentDownloads,
                     ...downloadStatus.failedDownloads,
                 ].find((job) => job.targetMbid === pending.mbid);
+                if (matchingJob) return false;
 
-                // If job is completed or failed, remove from pending
-                if (matchingJob) {
-                    return false;
-                }
-
-                // Keep if no job found yet
                 return true;
             });
+            return next.length === prev.length ? prev : next;
         });
-    }, [
-        downloadStatus.activeDownloads,
-        downloadStatus.recentDownloads,
-        downloadStatus.failedDownloads,
-    ]);
+    }
 
     // Cleanup pending downloads older than 2 minutes
     // This handles cases where jobs fail immediately and don't appear in any API response

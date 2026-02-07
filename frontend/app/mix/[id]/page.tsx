@@ -8,6 +8,7 @@ import { useAudioState, useAudioPlayback, useAudioControls } from "@/lib/audio-c
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
 import { Play, Pause, Music, Shuffle, Save, ListPlus } from "lucide-react";
 import { cn } from "@/utils/cn";
+import { formatTime } from "@/utils/formatTime";
 import { shuffleArray } from "@/utils/shuffle";
 import { toast } from "sonner";
 import { useMixQuery } from "@/hooks/useQueries";
@@ -54,11 +55,6 @@ export default function MixPage() {
         return `${mins} min`;
     };
 
-    const formatDuration = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, "0")}`;
-    };
 
     // Check if this mix is currently playing
     const mixTrackIds = useMemo(() => {
@@ -383,7 +379,7 @@ export default function MixPage() {
                                                 <ListPlus className="w-4 h-4" />
                                             </button>
                                             <span className="text-sm text-gray-400 w-12 text-right">
-                                                {formatDuration(track.duration)}
+                                                {formatTime(track.duration)}
                                             </span>
                                         </div>
                                     </div>

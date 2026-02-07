@@ -36,7 +36,6 @@ export function TVLayout({ children }: { children: React.ReactNode }) {
         containerRef: contentRef,
         focusFirstCard,
         handleKeyDown: handleContentKeyDown,
-        isContentFocused,
     } = useTVNavigation({
         onBack: () => {
             setIsNavFocused(true);
@@ -130,7 +129,7 @@ export function TVLayout({ children }: { children: React.ReactNode }) {
                         }
                     }
                     e.preventDefault();
-                    isPlaying ? pause() : resume();
+                    if (isPlaying) { pause(); } else { resume(); }
                     return;
                 case "MediaTrackNext":
                     e.preventDefault();

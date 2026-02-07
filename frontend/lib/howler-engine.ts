@@ -5,7 +5,16 @@
  * Handles: play, pause, seek, volume, track changes, events
  */
 
-import { Howl } from "howler";
+import { Howl, HowlOptions } from "howler";
+
+interface ExtendedHowlOptions extends HowlOptions {
+    xhr?: {
+        method?: string;
+        headers?: Record<string, string>;
+        withCredentials?: boolean;
+        timeout?: number;
+    };
+}
 
 export type HowlerEventType =
     | "play"
@@ -19,7 +28,7 @@ export type HowlerEventType =
     | "playerror"
     | "timeupdate";
 
-export type HowlerEventCallback = (data?: any) => void;
+export type HowlerEventCallback = (data?: unknown) => void;
 
 interface HowlerEngineState {
     currentSrc: string | null;
@@ -138,8 +147,8 @@ class HowlerEngine {
         if (this.isPreloaded(src)) {
             const preloadedHowl = this.getPreloadedHowl(src);
             if (preloadedHowl) {
-                // Clean up current track
-                this.cleanup();
+                // Clean up current track immediately to prevent doubled audio
+                this.cleanup(true);
 
                 this.state.currentSrc = src;
                 this.howl = preloadedHowl;
@@ -170,9 +179,8 @@ class HowlerEngine {
         // Set loading guard immediately
         this.isLoading = true;
 
-        // Simple instant switch - no crossfade (crossfade caused duplicate playback bugs)
-        // Just stop current track and load new one
-        this.cleanup();
+        // Immediate cleanup to prevent doubled audio from race conditions
+        this.cleanup(true);
 
         this.state.currentSrc = src;
 
@@ -192,7 +200,7 @@ class HowlerEngine {
         // Use Web Audio API on Android for smoother playback (trades streaming for quality)
         // EXCEPTION: Podcasts always use HTML5 Audio because they need Range request support
         // for seeking in large files. Web Audio would try to download the entire ~100MB file.
-        const howlConfig: any = {
+        const howlConfig: ExtendedHowlOptions = {
             src: [src],
             html5: isPodcastOrAudiobook || !isAndroidWebView, // HTML5 for podcasts/audiobooks OR non-Android
             autoplay: false, // We'll handle autoplay with fade
@@ -404,7 +412,7 @@ class HowlerEngine {
         if (!this.state.currentSrc) return;
 
         const src = this.state.currentSrc;
-        const format = this.howl ? (this.howl as any)._format : undefined;
+        const format = this.howl ? (this.howl as unknown as { _format?: string[] })._format : undefined;
 
         this.cleanup();
         this.load(src, false, format?.[0]);
@@ -444,7 +452,7 @@ class HowlerEngine {
             src.includes("/api/podcasts/") || src.includes("/api/audiobooks/");
 
         // Build Howl config (same logic as load())
-        const howlConfig: any = {
+        const howlConfig: ExtendedHowlOptions = {
             src: [src],
             html5: isPodcastOrAudiobook || !isAndroidWebView,
             autoplay: false,
@@ -571,11 +579,11 @@ class HowlerEngine {
 
         try {
             // Access the underlying HTML5 audio element
-            const sounds = (this.howl as any)._sounds;
+            const sounds = (this.howl as unknown as { _sounds?: Array<{ _node?: HTMLAudioElement }> })._sounds;
             if (sounds && sounds.length > 0 && sounds[0]._node) {
                 return sounds[0]._node.currentTime || 0;
             }
-        } catch (e) {
+        } catch {
             // Fallback to Howler's reported time
         }
 
@@ -613,7 +621,7 @@ class HowlerEngine {
     /**
      * Emit event to all listeners
      */
-    private emit(event: HowlerEventType, data?: any): void {
+    private emit(event: HowlerEventType, data?: unknown): void {
         this.eventListeners.get(event)?.forEach((callback) => {
             try {
                 callback(data);
@@ -723,8 +731,9 @@ class HowlerEngine {
     /**
      * Cleanup current Howl instance
      * Safe for rapid consecutive calls - tracks pending cleanups
+     * @param immediate - Skip fade and clean up synchronously (used during track changes to prevent doubled audio)
      */
-    private cleanup(): void {
+    private cleanup(immediate: boolean = false): void {
         this.cancelPreload();
         this.stopTimeUpdates();
 
@@ -757,7 +766,7 @@ class HowlerEngine {
             };
 
             try {
-                if (wasPlaying) {
+                if (wasPlaying && !immediate) {
                     // Micro-fade before stop/unload to reduce click/pop artifacts
                     oldHowl.fade(targetVolume, 0, this.popFadeMs);
                     this.cleanupTimeoutId = setTimeout(() => {
@@ -765,7 +774,10 @@ class HowlerEngine {
                         finalizeCleanup(oldHowl);
                     }, this.popFadeMs + 2);
                 } else {
-                    // Synchronous cleanup when not playing
+                    // Immediate cleanup - no fade delay (track changes, or not playing)
+                    if (wasPlaying) {
+                        oldHowl.stop();
+                    }
                     finalizeCleanup(oldHowl);
                 }
             } catch {

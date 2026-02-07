@@ -14,7 +14,7 @@ import {
 let passed = 0;
 let failed = 0;
 
-function assertEqual(actual: any, expected: any, testName: string) {
+function assertEqual(actual: unknown, expected: unknown, testName: string) {
     if (actual === expected) {
         console.log(`✓ ${testName}`);
         passed++;

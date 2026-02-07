@@ -59,7 +59,7 @@ export interface MoodBucketMix {
     coverUrls: string[];
     trackCount: number;
     color: string;
-    tracks?: any[];
+    tracks?: ApiData[];
 }
 
 export interface SavedMoodMixResponse {
@@ -100,6 +100,34 @@ export interface VibeStatusResponse {
     embeddedTracks: number;
     progress: number;
     isComplete: boolean;
+}
+
+interface ApiError extends Error {
+    status?: number;
+    data?: Record<string, unknown>;
+}
+
+interface ServiceTestResult {
+    success?: boolean;
+    version?: string;
+    error?: string;
+}
+
+// API response data type - represents unvalidated JSON from the server.
+// Using a single suppression here allows all 100+ API methods to return
+// properly loose types without scattering suppressions across the file.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiData = any;
+
+
+function toSearchParams(params: Record<string, string | number | boolean | undefined>): URLSearchParams {
+    const entries: Record<string, string> = {};
+    for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined) {
+            entries[key] = String(value);
+        }
+    }
+    return new URLSearchParams(entries);
 }
 
 // Dynamically determine API URL based on configuration
@@ -332,14 +360,14 @@ class ApiClient {
 
             if (response.status === 401) {
                 const err = new Error("Not authenticated");
-                (err as any).status = response.status;
-                (err as any).data = error;
+                (err as ApiError).status = response.status;
+                (err as ApiError).data = error;
                 throw err;
             }
 
             const err = new Error(error.error || "An error occurred");
-            (err as any).status = response.status;
-            (err as any).data = error;
+            (err as ApiError).status = response.status;
+            (err as ApiError).data = error;
             throw err;
         }
 
@@ -348,7 +376,7 @@ class ApiClient {
     }
 
     // Generic POST method for convenience
-    async post<T = any>(endpoint: string, data?: any): Promise<T> {
+    async post<T = unknown>(endpoint: string, data?: unknown): Promise<T> {
         return this.request<T>(endpoint, {
             method: "POST",
             body: data ? JSON.stringify(data) : undefined,
@@ -356,21 +384,27 @@ class ApiClient {
     }
 
     // Generic GET method for convenience
-    async get<T = any>(endpoint: string): Promise<T> {
+    async get<T = unknown>(endpoint: string): Promise<T> {
         return this.request<T>(endpoint, {
             method: "GET",
         });
     }
 
     // Generic DELETE method for convenience
-    async delete<T = any>(endpoint: string): Promise<T> {
+    async delete<T = unknown>(endpoint: string): Promise<T> {
         return this.request<T>(endpoint, {
             method: "DELETE",
         });
     }
 
     // Auth
-    async login(username: string, password: string, token?: string) {
+    async login(username: string, password: string, token?: string): Promise<{
+        id: string;
+        username: string;
+        role: string;
+        requires2FA?: boolean;
+        onboardingComplete?: boolean;
+    }> {
         const data = await this.request<{
             token?: string;
             refreshToken?: string;
@@ -378,11 +412,14 @@ class ApiClient {
                 id: string;
                 username: string;
                 role: string;
+                requires2FA?: boolean;
+                onboardingComplete?: boolean;
             };
             id?: string;
             username?: string;
             role?: string;
             requires2FA?: boolean;
+            onboardingComplete?: boolean;
         }>("/auth/login", {
             method: "POST",
             body: JSON.stringify({ username, password, token }),
@@ -397,7 +434,13 @@ class ApiClient {
         if (data.user) {
             return data.user;
         }
-        return data as any;
+        return {
+            id: data.id || "",
+            username: data.username || "",
+            role: data.role || "",
+            requires2FA: data.requires2FA,
+            onboardingComplete: data.onboardingComplete,
+        };
     }
 
     async register(username: string, password: string, email?: string) {
@@ -438,21 +481,21 @@ class ApiClient {
         filter?: "owned" | "discovery" | "all";
     }) {
         return this.request<{
-            artists: any[];
+            artists: ApiData[];
             total: number;
             offset: number;
             limit: number;
-        }>(`/library/artists?${new URLSearchParams(params as any).toString()}`);
+        }>(`/library/artists?${toSearchParams(params as Record<string, string | number | boolean | undefined>).toString()}`);
     }
 
     async getRecentlyListened(limit = 10) {
-        return this.request<{ items: any[] }>(
+        return this.request<{ items: ApiData[] }>(
             `/library/recently-listened?limit=${limit}`
         );
     }
 
     async getRecentlyAdded(limit = 10) {
-        return this.request<{ artists: any[] }>(
+        return this.request<{ artists: ApiData[] }>(
             `/library/recently-added?limit=${limit}`
         );
     }
@@ -471,7 +514,7 @@ class ApiClient {
         return this.request<{
             status: string;
             progress: number;
-            result?: any;
+            result?: ApiData;
         }>(`/library/scan/status/${jobId}`);
     }
 
@@ -482,7 +525,7 @@ class ApiClient {
     }
 
     async getArtist(id: string) {
-        return this.request<any>(`/library/artists/${id}`);
+        return this.request<ApiData>(`/library/artists/${id}`);
     }
 
     async getAlbums(params?: {
@@ -492,15 +535,15 @@ class ApiClient {
         filter?: "owned" | "discovery" | "all";
     }) {
         return this.request<{
-            albums: any[];
+            albums: ApiData[];
             total: number;
             offset: number;
             limit: number;
-        }>(`/library/albums?${new URLSearchParams(params as any).toString()}`);
+        }>(`/library/albums?${toSearchParams(params as Record<string, string | number | boolean | undefined>).toString()}`);
     }
 
     async getAlbum(id: string) {
-        return this.request<any>(`/library/albums/${id}`);
+        return this.request<ApiData>(`/library/albums/${id}`);
     }
 
     async getTracks(params?: {
@@ -509,17 +552,17 @@ class ApiClient {
         offset?: number;
     }) {
         return this.request<{
-            tracks: any[];
+            tracks: ApiData[];
             total: number;
             offset: number;
             limit: number;
-        }>(`/library/tracks?${new URLSearchParams(params as any).toString()}`);
+        }>(`/library/tracks?${toSearchParams(params as Record<string, string | number | boolean | undefined>).toString()}`);
     }
 
     async getShuffledTracks(limit?: number) {
         const params = limit ? `?limit=${limit}` : "";
         return this.request<{
-            tracks: any[];
+            tracks: ApiData[];
             total: number;
         }>(`/library/tracks/shuffle${params}`);
     }
@@ -549,13 +592,13 @@ class ApiClient {
     }
 
     async getTrack(id: string) {
-        return this.request<any>(`/library/tracks/${id}`);
+        return this.request<ApiData>(`/library/tracks/${id}`);
     }
 
     async getRadioTracks(type: string, value?: string, limit = 50) {
         const params = new URLSearchParams({ type, limit: String(limit) });
         if (value) params.append("value", value);
-        return this.request<{ tracks: any[] }>(
+        return this.request<{ tracks: ApiData[] }>(
             `/library/radio?${params.toString()}`
         );
     }
@@ -649,40 +692,40 @@ class ApiClient {
 
     // Recommendations
     async getRecommendationsForYou(limit = 10) {
-        return this.request<{ artists: any[] }>(
+        return this.request<{ artists: ApiData[] }>(
             `/recommendations/for-you?limit=${limit}`
         );
     }
 
     async getSimilarArtists(seedArtistId: string, limit = 20) {
-        return this.request<{ recommendations: any[] }>(
+        return this.request<{ recommendations: ApiData[] }>(
             `/recommendations?seedArtistId=${seedArtistId}&limit=${limit}`
         );
     }
 
     async getSimilarAlbums(seedAlbumId: string, limit = 20) {
-        return this.request<{ recommendations: any[] }>(
+        return this.request<{ recommendations: ApiData[] }>(
             `/recommendations/albums?seedAlbumId=${seedAlbumId}&limit=${limit}`
         );
     }
 
     async getSimilarTracks(seedTrackId: string, limit = 20) {
-        return this.request<{ recommendations: any[] }>(
+        return this.request<{ recommendations: ApiData[] }>(
             `/recommendations/tracks?seedTrackId=${seedTrackId}&limit=${limit}`
         );
     }
 
     // Playlists
     async getPlaylists() {
-        return this.request<any[]>("/playlists");
+        return this.request<ApiData[]>("/playlists");
     }
 
     async getPlaylist(id: string) {
-        return this.request<any>(`/playlists/${id}`);
+        return this.request<ApiData>(`/playlists/${id}`);
     }
 
     async createPlaylist(name: string, isPublic = false) {
-        return this.request<any>("/playlists", {
+        return this.request<ApiData>("/playlists", {
             method: "POST",
             body: JSON.stringify({ name, isPublic }),
         });
@@ -692,7 +735,7 @@ class ApiClient {
         id: string,
         data: { name?: string; isPublic?: boolean }
     ) {
-        return this.request<any>(`/playlists/${id}`, {
+        return this.request<ApiData>(`/playlists/${id}`, {
             method: "PUT",
             body: JSON.stringify(data),
         });
@@ -705,7 +748,7 @@ class ApiClient {
     }
 
     async addTrackToPlaylist(playlistId: string, trackId: string) {
-        return this.request<any>(`/playlists/${playlistId}/items`, {
+        return this.request<ApiData>(`/playlists/${playlistId}/items`, {
             method: "POST",
             body: JSON.stringify({ trackId }),
         });
@@ -765,23 +808,23 @@ class ApiClient {
 
     // Play tracking
     async logPlay(trackId: string) {
-        return this.request<any>("/plays", {
+        return this.request<ApiData>("/plays", {
             method: "POST",
             body: JSON.stringify({ trackId }),
         });
     }
 
     async getRecentPlays(limit = 50) {
-        return this.request<any[]>(`/plays?limit=${limit}`);
+        return this.request<ApiData[]>(`/plays?limit=${limit}`);
     }
 
     // Settings
     async getSettings() {
-        return this.request<any>("/settings");
+        return this.request<ApiData>("/settings");
     }
 
-    async updateSettings(settings: any) {
-        return this.request<any>("/settings", {
+    async updateSettings(settings: ApiData) {
+        return this.request<ApiData>("/settings", {
             method: "POST",
             body: JSON.stringify(settings),
         });
@@ -796,18 +839,18 @@ class ApiClient {
 
     // System Settings
     async getSystemSettings() {
-        return this.request<any>("/system-settings");
+        return this.request<ApiData>("/system-settings");
     }
 
-    async updateSystemSettings(settings: any) {
-        return this.request<any>("/system-settings", {
+    async updateSystemSettings(settings: ApiData) {
+        return this.request<ApiData>("/system-settings", {
             method: "POST",
             body: JSON.stringify(settings),
         });
     }
 
     async clearAllCaches() {
-        return this.request<any>("/system-settings/clear-caches", {
+        return this.request<ApiData>("/system-settings/clear-caches", {
             method: "POST",
         });
     }
@@ -829,70 +872,70 @@ class ApiClient {
 
     // System Settings Tests
     async testLidarr(url: string, apiKey: string) {
-        return this.request<any>("/system-settings/test-lidarr", {
+        return this.request<ServiceTestResult>("/system-settings/test-lidarr", {
             method: "POST",
             body: JSON.stringify({ url, apiKey }),
         });
     }
 
     async testNzbget(url: string, username: string, password: string) {
-        return this.request<any>("/system-settings/test-nzbget", {
+        return this.request<ServiceTestResult>("/system-settings/test-nzbget", {
             method: "POST",
             body: JSON.stringify({ url, username, password }),
         });
     }
 
     async testQbittorrent(url: string, username: string, password: string) {
-        return this.request<any>("/system-settings/test-qbittorrent", {
+        return this.request<ServiceTestResult>("/system-settings/test-qbittorrent", {
             method: "POST",
             body: JSON.stringify({ url, username, password }),
         });
     }
 
     async testLastfm(apiKey: string) {
-        return this.request<any>("/system-settings/test-lastfm", {
+        return this.request<ServiceTestResult>("/system-settings/test-lastfm", {
             method: "POST",
             body: JSON.stringify({ lastfmApiKey: apiKey }),
         });
     }
 
     async testOpenai(apiKey: string, model: string) {
-        return this.request<any>("/system-settings/test-openai", {
+        return this.request<ServiceTestResult>("/system-settings/test-openai", {
             method: "POST",
             body: JSON.stringify({ apiKey, model }),
         });
     }
 
     async testFanart(apiKey: string) {
-        return this.request<any>("/system-settings/test-fanart", {
+        return this.request<ServiceTestResult>("/system-settings/test-fanart", {
             method: "POST",
             body: JSON.stringify({ fanartApiKey: apiKey }),
         });
     }
 
     async testAudiobookshelf(url: string, apiKey: string) {
-        return this.request<any>("/system-settings/test-audiobookshelf", {
+        return this.request<ServiceTestResult>("/system-settings/test-audiobookshelf", {
             method: "POST",
             body: JSON.stringify({ url, apiKey }),
         });
     }
 
     async testSoulseek(username: string, password: string) {
-        return this.request<any>("/system-settings/test-soulseek", {
+        return this.request<ServiceTestResult>("/system-settings/test-soulseek", {
             method: "POST",
             body: JSON.stringify({ username, password }),
         });
     }
 
     async testSpotify(clientId: string, clientSecret: string) {
-        return this.request<any>("/system-settings/test-spotify", {
+        return this.request<ServiceTestResult>("/system-settings/test-spotify", {
             method: "POST",
             body: JSON.stringify({ clientId, clientSecret }),
         });
     }
 
     async testListenNotes(apiKey: string) {
-        return this.request<any>("/system-settings/test-listennotes", {
+        return this.request<ServiceTestResult>("/system-settings/test-listennotes", {
             method: "POST",
             body: JSON.stringify({ apiKey }),
         });
@@ -905,7 +948,7 @@ class ApiClient {
         rgMbid?: string,
         downloadType: "library" | "discovery" = "library"
     ) {
-        return this.request<any>("/downloads", {
+        return this.request<ApiData>("/downloads", {
             method: "POST",
             body: JSON.stringify({
                 type: "album",
@@ -923,7 +966,7 @@ class ApiClient {
         mbid: string,
         downloadType: "library" | "discovery" = "library"
     ) {
-        return this.request<any>("/downloads", {
+        return this.request<ApiData>("/downloads", {
             method: "POST",
             body: JSON.stringify({
                 type: "artist",
@@ -935,7 +978,7 @@ class ApiClient {
     }
 
     async getDownloadStatus(id: string) {
-        return this.request<any>(`/downloads/${id}`);
+        return this.request<ApiData>(`/downloads/${id}`);
     }
 
     async getDownloads(limit?: number, includeDiscovery: boolean = false) {
@@ -943,7 +986,7 @@ class ApiClient {
         if (limit) params.set("limit", String(limit));
         params.set("includeDiscovery", String(includeDiscovery));
         const query = params.toString() ? `?${params.toString()}` : "";
-        return this.request<any[]>(`/downloads${query}`);
+        return this.request<ApiData[]>(`/downloads${query}`);
     }
 
     async deleteDownload(id: string) {
@@ -979,8 +1022,8 @@ class ApiClient {
         return this.request<{
             weekStart: string;
             weekEnd: string;
-            tracks: any[];
-            unavailable: any[];
+            tracks: ApiData[];
+            unavailable: ApiData[];
             totalCount: number;
             unavailableCount: number;
         }>("/discover/current");
@@ -1085,13 +1128,13 @@ class ApiClient {
 
     // Artists (Discovery)
     async getArtistDiscovery(nameOrMbid: string) {
-        return this.request<any>(
+        return this.request<ApiData>(
             `/artists/discover/${encodeURIComponent(nameOrMbid)}`
         );
     }
 
     async getAlbumDiscovery(rgMbid: string) {
-        return this.request<any>(
+        return this.request<ApiData>(
             `/artists/album/${encodeURIComponent(rgMbid)}`
         );
     }
@@ -1105,7 +1148,7 @@ class ApiClient {
     }
 
     async testDeezer(apiKey?: string) {
-        return this.request<any>("/system-settings/test-deezer", {
+        return this.request<ServiceTestResult>("/system-settings/test-deezer", {
             method: "POST",
             body: JSON.stringify({ apiKey }),
         });
@@ -1113,15 +1156,15 @@ class ApiClient {
 
     // Audiobooks
     async getAudiobooks() {
-        return this.request<any[]>("/audiobooks");
+        return this.request<ApiData[]>("/audiobooks");
     }
 
     async getAudiobook(id: string) {
-        return this.request<any>(`/audiobooks/${id}`);
+        return this.request<ApiData>(`/audiobooks/${id}`);
     }
 
     async getAudiobookSeries(seriesName: string) {
-        return this.request<any[]>(
+        return this.request<ApiData[]>(
             `/audiobooks/series/${encodeURIComponent(seriesName)}`
         );
     }
@@ -1143,43 +1186,43 @@ class ApiClient {
         duration: number,
         isFinished: boolean = false
     ) {
-        return this.request<any>(`/audiobooks/${id}/progress`, {
+        return this.request<ApiData>(`/audiobooks/${id}/progress`, {
             method: "POST",
             body: JSON.stringify({ currentTime, duration, isFinished }),
         });
     }
 
     async deleteAudiobookProgress(id: string) {
-        return this.request<any>(`/audiobooks/${id}/progress`, {
+        return this.request<ApiData>(`/audiobooks/${id}/progress`, {
             method: "DELETE",
         });
     }
 
     async getContinueListening() {
-        return this.request<any[]>("/audiobooks/continue-listening");
+        return this.request<ApiData[]>("/audiobooks/continue-listening");
     }
 
     async searchAudiobooks(query: string) {
-        return this.request<any[]>(
+        return this.request<ApiData[]>(
             `/audiobooks/search?q=${encodeURIComponent(query)}`
         );
     }
 
     // Podcasts
     async getPodcasts() {
-        return this.request<any[]>("/podcasts");
+        return this.request<ApiData[]>("/podcasts");
     }
 
     async getPodcast(id: string) {
-        return this.request<any>(`/podcasts/${id}`, { silent404: true });
+        return this.request<ApiData>(`/podcasts/${id}`, { silent404: true });
     }
 
     async previewPodcast(itunesId: string) {
-        return this.request<any>(`/podcasts/preview/${itunesId}`);
+        return this.request<ApiData>(`/podcasts/preview/${itunesId}`);
     }
 
     async getPodcastEpisode(podcastId: string, episodeId: string) {
-        return this.request<any>(
+        return this.request<ApiData>(
             `/podcasts/${podcastId}/episodes/${episodeId}`
         );
     }
@@ -1221,7 +1264,7 @@ class ApiClient {
         duration: number,
         isFinished: boolean = false
     ) {
-        return this.request<any>(
+        return this.request<ApiData>(
             `/podcasts/${podcastId}/episodes/${episodeId}/progress`,
             {
                 method: "POST",
@@ -1248,7 +1291,7 @@ class ApiClient {
     }
 
     async deletePodcastEpisodeProgress(podcastId: string, episodeId: string) {
-        return this.request<any>(
+        return this.request<ApiData>(
             `/podcasts/${podcastId}/episodes/${episodeId}/progress`,
             {
                 method: "DELETE",
@@ -1257,31 +1300,31 @@ class ApiClient {
     }
 
     async getSimilarPodcasts(podcastId: string) {
-        return this.request<any[]>(`/podcasts/${podcastId}/similar`);
+        return this.request<ApiData[]>(`/podcasts/${podcastId}/similar`);
     }
 
     async getTopPodcasts(limit = 20, genreId?: number) {
         const params = new URLSearchParams({ limit: limit.toString() });
         if (genreId) params.append("genreId", genreId.toString());
-        return this.request<any[]>(
+        return this.request<ApiData[]>(
             `/podcasts/discover/top?${params.toString()}`
         );
     }
 
     async getPodcastsByGenre(genreIds: number[]) {
-        return this.request<any>(
+        return this.request<ApiData>(
             `/podcasts/discover/genres?genres=${genreIds.join(",")}`
         );
     }
 
     async getPodcastsByGenrePaginated(genreId: number, limit = 20, offset = 0) {
-        return this.request<any[]>(
+        return this.request<ApiData[]>(
             `/podcasts/discover/genre/${genreId}?limit=${limit}&offset=${offset}`
         );
     }
 
     async subscribePodcast(feedUrl: string, itunesId?: string) {
-        return this.request<any>("/podcasts/subscribe", {
+        return this.request<{ success: boolean; podcast?: ApiData }>("/podcasts/subscribe", {
             method: "POST",
             body: JSON.stringify({ feedUrl, itunesId }),
         });
@@ -1298,7 +1341,7 @@ class ApiClient {
 
     // Playback State (cross-device sync)
     async getPlaybackState() {
-        return this.request<any>("/playback-state");
+        return this.request<ApiData>("/playback-state");
     }
 
     async savePlaybackState(state: {
@@ -1306,11 +1349,11 @@ class ApiClient {
         trackId?: string;
         audiobookId?: string;
         podcastId?: string;
-        queue?: any[];
+        queue?: ApiData[];
         currentIndex?: number;
         isShuffle?: boolean;
     }) {
-        return this.request<any>("/playback-state", {
+        return this.request<ApiData>("/playback-state", {
             method: "POST",
             body: JSON.stringify(state),
         });
@@ -1335,7 +1378,7 @@ class ApiClient {
         limit: number = 20,
         signal?: AbortSignal
     ) {
-        return this.request<any>(
+        return this.request<ApiData>(
             `/search?q=${encodeURIComponent(query)}&type=${type}&limit=${limit}`,
             { signal }
         );
@@ -1347,7 +1390,7 @@ class ApiClient {
         limit: number = 20,
         signal?: AbortSignal
     ) {
-        return this.request<any>(
+        return this.request<ApiData>(
             `/search/discover?q=${encodeURIComponent(
                 query
             )}&type=${type}&limit=${limit}`,
@@ -1376,7 +1419,7 @@ class ApiClient {
     }
 
     async getSoulseekResults(searchId: string) {
-        return this.request<{ results: any[]; count: number }>(
+        return this.request<{ results: ApiData[]; count: number }>(
             `/soulseek/search/${searchId}`
         );
     }
@@ -1387,7 +1430,8 @@ class ApiClient {
         filename?: string,
         size?: number,
         artist?: string,
-        album?: string
+        album?: string,
+        title?: string
     ) {
         return this.request<{
             success: boolean;
@@ -1402,27 +1446,28 @@ class ApiClient {
                 size,
                 artist,
                 album,
+                title,
             }),
         });
     }
 
     async getSlskdDownloads() {
-        return this.request<{ downloads: any[]; count: number }>(
+        return this.request<{ downloads: ApiData[]; count: number }>(
             "/soulseek/downloads"
         );
     }
 
     // Programmatic Mixes
     async getMixes() {
-        return this.request<any[]>("/mixes");
+        return this.request<ApiData[]>("/mixes");
     }
 
     async getMix(id: string) {
-        return this.request<any>(`/mixes/${id}`);
+        return this.request<ApiData>(`/mixes/${id}`);
     }
 
     async refreshMixes() {
-        return this.request<{ message: string; mixes: any[] }>(
+        return this.request<{ message: string; mixes: ApiData[] }>(
             "/mixes/refresh",
             {
                 method: "POST",
@@ -1448,7 +1493,7 @@ class ApiClient {
     }
 
     async generateMoodMix(params: MoodMixParams) {
-        return this.request<any>("/mixes/mood", {
+        return this.request<ApiData>("/mixes/mood", {
             method: "POST",
             body: JSON.stringify(params),
         });
@@ -1480,11 +1525,11 @@ class ApiClient {
 
     // Enrichment
     async getEnrichmentSettings() {
-        return this.request<any>("/enrichment/settings");
+        return this.request<ApiData>("/enrichment/settings");
     }
 
-    async updateEnrichmentSettings(settings: any) {
-        return this.request<any>("/enrichment/settings", {
+    async updateEnrichmentSettings(settings: ApiData) {
+        return this.request<ApiData>("/enrichment/settings", {
             method: "PUT",
             body: JSON.stringify(settings),
         });
@@ -1494,7 +1539,7 @@ class ApiClient {
         return this.request<{
             success: boolean;
             confidence: number;
-            data: any;
+            data: ApiData;
         }>(`/enrichment/artist/${artistId}`, {
             method: "POST",
         });
@@ -1504,7 +1549,7 @@ class ApiClient {
         return this.request<{
             success: boolean;
             confidence: number;
-            data: any;
+            data: ApiData;
         }>(`/enrichment/album/${albumId}`, {
             method: "POST",
         });
@@ -1601,6 +1646,12 @@ class ApiClient {
         }>("/enrichment/reset-audio-analysis", { method: "POST" });
     }
 
+    async retryFailedAnalysis() {
+        return this.request<{ message: string; reset: number }>("/analysis/retry-failed", {
+            method: "POST",
+        });
+    }
+
     async updateArtistMetadata(
         artistId: string,
         data: {
@@ -1611,7 +1662,7 @@ class ApiClient {
             heroUrl?: string;
         }
     ) {
-        return this.request<any>(`/enrichment/artists/${artistId}/metadata`, {
+        return this.request<ApiData>(`/enrichment/artists/${artistId}/metadata`, {
             method: "PUT",
             body: JSON.stringify(data),
         });
@@ -1627,36 +1678,36 @@ class ApiClient {
             coverUrl?: string;
         }
     ) {
-        return this.request<any>(`/enrichment/albums/${albumId}/metadata`, {
+        return this.request<ApiData>(`/enrichment/albums/${albumId}/metadata`, {
             method: "PUT",
             body: JSON.stringify(data),
         });
     }
 
-    async updateTrackMetadata(trackId: string, data: any) {
+    async updateTrackMetadata(trackId: string, data: ApiData) {
         // Placeholder - not implemented yet
-        return this.request<any>(`/library/tracks/${trackId}/metadata`, {
+        return this.request<ApiData>(`/library/tracks/${trackId}/metadata`, {
             method: "PUT",
             body: JSON.stringify(data),
         });
     }
 
     async resetArtistMetadata(artistId: string) {
-        return this.request<{ message: string; artist: any }>(
+        return this.request<{ message: string; artist: ApiData }>(
             `/enrichment/artists/${artistId}/reset`,
             { method: "POST" }
         );
     }
 
     async resetAlbumMetadata(albumId: string) {
-        return this.request<{ message: string; album: any }>(
+        return this.request<{ message: string; album: ApiData }>(
             `/enrichment/albums/${albumId}/reset`,
             { method: "POST" }
         );
     }
 
     async resetTrackMetadata(trackId: string) {
-        return this.request<{ message: string; track: any }>(
+        return this.request<{ message: string; track: ApiData }>(
             `/enrichment/tracks/${trackId}/reset`,
             { method: "POST" }
         );
@@ -1664,15 +1715,15 @@ class ApiClient {
 
     // Homepage
     async getHomepageGenres(limit = 4) {
-        return this.request<any[]>(`/homepage/genres?limit=${limit}`);
+        return this.request<ApiData[]>(`/homepage/genres?limit=${limit}`);
     }
 
     async getHomepageTopPodcasts(limit = 6) {
-        return this.request<any[]>(`/homepage/top-podcasts?limit=${limit}`);
+        return this.request<ApiData[]>(`/homepage/top-podcasts?limit=${limit}`);
     }
 
     async getPopularArtists(limit = 20) {
-        return this.request<{ artists: any[] }>(
+        return this.request<{ artists: ApiData[] }>(
             `/discover/popular-artists?limit=${limit}`
         );
     }
@@ -1708,7 +1759,7 @@ class ApiClient {
             type: string;
             title: string;
             message: string | null;
-            metadata: any;
+            metadata: ApiData | null;
             read: boolean;
             cleared: boolean;
             createdAt: string;

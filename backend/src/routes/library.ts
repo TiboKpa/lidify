@@ -1784,11 +1784,7 @@ router.get("/tracks/shuffle", async (req, res) => {
                     },
                 },
             });
-            // Fisher-Yates shuffle
-            for (let i = tracksData.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [tracksData[i], tracksData[j]] = [tracksData[j], tracksData[i]];
-            }
+            tracksData = shuffleArray(tracksData);
         } else {
             // For large libraries, use database-level randomization
             // Get random track IDs first (efficient, O(limit) memory)

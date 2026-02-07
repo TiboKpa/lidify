@@ -2,7 +2,8 @@
 
 import { Play, Pause } from "lucide-react";
 import { Podcast, Episode } from "../types";
-import { formatDuration, formatDate } from "../utils";
+import { formatDuration } from "@/utils/formatTime";
+import { formatDate } from "../utils";
 
 interface ContinueListeningProps {
     podcast: Podcast;
@@ -15,7 +16,7 @@ interface ContinueListeningProps {
 }
 
 export function ContinueListening({
-    podcast,
+    podcast: _podcast,
     inProgressEpisodes,
     sortedEpisodes,
     isEpisodePlaying,

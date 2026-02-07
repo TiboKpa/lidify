@@ -3,7 +3,7 @@
 import { useAudioState } from "@/lib/audio-state-context";
 import { useAudioPlayback } from "@/lib/audio-playback-context";
 import { useAudioControls } from "@/lib/audio-controls-context";
-import { api } from "@/lib/api";
+import { useMediaInfo } from "@/hooks/useMediaInfo";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -48,7 +48,6 @@ export function FullPlayer() {
         isMuted,
         isShuffle,
         repeatMode,
-        playerMode,
         vibeMode,
         vibeSourceFeatures,
         queue,
@@ -161,7 +160,7 @@ export function FullPlayer() {
         );
     })();
 
-    const hasMedia = !!(currentTrack || currentAudiobook || currentPodcast);
+
 
     // For audiobooks/podcasts, show saved progress even before playback starts
     // This provides immediate visual feedback of where the user left off
@@ -197,55 +196,13 @@ export function FullPlayer() {
         seek(time);
     };
 
-    // Determine if seeking is allowed
-    const seekEnabled = hasMedia && canSeek;
+    const { title, subtitle, coverUrl, artistLink, mediaLink, hasMedia } = useMediaInfo(100);
 
+    // Determine if seeking is allowed
     const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newVolume = parseInt(e.target.value) / 100;
         setVolume(newVolume);
     };
-
-    // Get current media info
-    let title = "";
-    let subtitle = "";
-    let coverUrl: string | null = null;
-    let albumLink: string | null = null;
-    let artistLink: string | null = null;
-    let mediaLink: string | null = null;
-
-    if (playbackType === "track" && currentTrack) {
-        title = currentTrack.title;
-        subtitle = currentTrack.artist?.name || "Unknown Artist";
-        coverUrl = currentTrack.album?.coverArt
-            ? api.getCoverArtUrl(currentTrack.album.coverArt, 100)
-            : null;
-        albumLink = currentTrack.album?.id
-            ? `/album/${currentTrack.album.id}`
-            : null;
-        artistLink = currentTrack.artist?.id
-            ? `/artist/${currentTrack.artist.mbid || currentTrack.artist.id}`
-            : null;
-        mediaLink = albumLink;
-    } else if (playbackType === "audiobook" && currentAudiobook) {
-        title = currentAudiobook.title;
-        subtitle = currentAudiobook.author;
-        coverUrl = currentAudiobook.coverUrl
-            ? api.getCoverArtUrl(currentAudiobook.coverUrl, 100)
-            : null;
-        mediaLink = `/audiobooks/${currentAudiobook.id}`;
-    } else if (playbackType === "podcast" && currentPodcast) {
-        title = currentPodcast.title;
-        subtitle = currentPodcast.podcastTitle;
-        coverUrl = currentPodcast.coverUrl
-            ? api.getCoverArtUrl(currentPodcast.coverUrl, 100)
-            : null;
-        const podcastId = currentPodcast.id.split(":")[0];
-        mediaLink = `/podcasts/${podcastId}`;
-    } else {
-        // Idle state - no media playing
-        title = "Not Playing";
-        subtitle = "Select something to play";
-    }
 
     return (
         <div className="relative flex-shrink-0">

@@ -1,6 +1,7 @@
 import { api } from "@/lib/api";
 import { useAudioControls } from "@/lib/audio-context";
 import { useDownloadContext } from "@/lib/download-context";
+import { shuffleArray } from "@/utils/shuffle";
 import { toast } from "sonner";
 import { Album, Track } from "../types";
 
@@ -66,9 +67,7 @@ export function useAlbumActions() {
 
         if (formattedTracks) {
             // Shuffle the tracks array
-            const shuffled = [...formattedTracks].sort(
-                () => Math.random() - 0.5
-            );
+            const shuffled = shuffleArray(formattedTracks);
             playTracks(shuffled, 0);
         }
     };
@@ -161,8 +160,7 @@ export function useAlbumActions() {
             toast.success(`Downloading "${album.title}"`, {
                 id: `download-${mbid}`,
             });
-        } catch (error) {
-            console.error("Failed to download album:", error);
+        } catch {
             toast.error("Failed to start album download", {
                 id: `download-${mbid}`,
             });

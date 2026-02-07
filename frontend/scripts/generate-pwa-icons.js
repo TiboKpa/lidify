@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 /**
  * Generate PWA icons from the correct Lidify logo
- * 
+ *
  * Uses the icon-only.png (smooth black circle with yellow soundwave)
  * instead of the old sharp-edged version with white borders
  */

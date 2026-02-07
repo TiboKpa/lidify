@@ -5,6 +5,7 @@ import { Edit, X, Save } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { GradientSpinner } from "./ui/GradientSpinner";
+import Image from "next/image";
 
 interface MetadataEditorProps {
     type: "artist" | "album" | "track";
@@ -29,7 +30,7 @@ interface MetadataEditorProps {
         _originalCoverUrl?: string | null;
         _hasUserOverrides?: boolean;
     };
-    onSave?: (updatedData: any) => void;
+    onSave?: (updatedData: Record<string, unknown> | null) => void;
 }
 
 /**
@@ -81,8 +82,8 @@ export function MetadataEditor({
             toast.success("Metadata reset to original values");
             onSave?.(null);
             setIsOpen(false);
-        } catch (error: any) {
-            toast.error(error.message || "Failed to reset metadata");
+        } catch (error: unknown) {
+            toast.error(error instanceof Error ? error.message : "Failed to reset metadata");
         } finally {
             setIsResetting(false);
         }
@@ -112,15 +113,15 @@ export function MetadataEditor({
             );
             onSave?.(response);
             setIsOpen(false);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Failed to update metadata:", error);
-            toast.error(error.message || "Failed to update metadata");
+            toast.error(error instanceof Error ? error.message : "Failed to update metadata");
         } finally {
             setIsSaving(false);
         }
     };
 
-    const handleChange = (field: string, value: any) => {
+    const handleChange = (field: string, value: string | number | string[] | null) => {
         setFormData((prev) => ({ ...prev, [field]: value }));
     };
 
@@ -382,13 +383,16 @@ export function MetadataEditor({
                                 {/* Image Preview */}
                                 {(formData.heroUrl || formData.coverUrl) && (
                                     <div className="mt-2">
-                                        <img
+                                        <Image
                                             src={
                                                 formData.heroUrl ||
                                                 formData.coverUrl
                                             }
                                             alt="Preview"
+                                            width={128}
+                                            height={128}
                                             className="w-32 h-32 object-cover rounded"
+                                            unoptimized
                                         />
                                     </div>
                                 )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { SearchIcon } from "lucide-react";
 import { useSearchData } from "@/features/search/hooks/useSearchData";
@@ -21,7 +21,7 @@ export default function SearchPage() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const [filterTab, setFilterTab] = useState<FilterTab>("all");
-    const [query, setQuery] = useState("");
+    const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
 
     // Custom hooks
     const {
@@ -40,13 +40,15 @@ export default function SearchPage() {
         handleDownload,
     } = useSoulseekSearch({ query });
 
-    // Read query from URL params on mount
-    useEffect(() => {
-        const q = searchParams.get("q");
-        if (q) {
-            setQuery(q);
+    // Sync query from URL params on navigation (render-time adjustment)
+    const urlQuery = searchParams.get("q") ?? "";
+    const [prevUrlQuery, setPrevUrlQuery] = useState(urlQuery);
+    if (urlQuery !== prevUrlQuery) {
+        setPrevUrlQuery(urlQuery);
+        if (urlQuery) {
+            setQuery(urlQuery);
         }
-    }, [searchParams]);
+    }
 
     // Derived state
     const topArtist = discoverResults.find((r) => r.type === "music");

@@ -24,7 +24,7 @@ export function useSoulseekSearch({
     );
     const [isSoulseekSearching, setIsSoulseekSearching] = useState(false);
     const [isSoulseekPolling, setIsSoulseekPolling] = useState(false);
-    const [soulseekSearchId, setSoulseekSearchId] = useState<string | null>(
+    const [, setSoulseekSearchId] = useState<string | null>(
         null,
     );
     const [soulseekEnabled, setSoulseekEnabled] = useState(false);
@@ -137,6 +137,7 @@ export function useSoulseekSearch({
                 result.size,
                 result.parsedArtist,
                 result.parsedAlbum,
+                result.parsedTitle,
             );
 
             // Use the activity sidebar (Active tab) instead of a toast/modal

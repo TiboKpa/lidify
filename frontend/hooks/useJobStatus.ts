@@ -6,7 +6,7 @@ export type JobType = "scan" | "discover";
 export interface JobStatus {
     status: "waiting" | "active" | "completed" | "failed" | "delayed";
     progress: number;
-    result?: any;
+    result?: Record<string, unknown>;
     error?: string;
 }
 
@@ -15,7 +15,7 @@ export function useJobStatus(
     jobType: JobType,
     options?: {
         pollInterval?: number;
-        onComplete?: (result: any) => void;
+        onComplete?: (result: Record<string, unknown>) => void;
         onError?: (error: string) => void;
     }
 ) {
@@ -26,7 +26,9 @@ export function useJobStatus(
 
     // Store latest options in ref to avoid stale closures
     const optionsRef = useRef(options);
-    optionsRef.current = options;
+    useEffect(() => {
+        optionsRef.current = options;
+    });
 
     const checkStatus = useCallback(async () => {
         if (!jobId || cancelledRef.current) return;
@@ -57,22 +59,24 @@ export function useJobStatus(
                     optionsRef.current.onError(errorMsg);
                 }
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             if (cancelledRef.current) return;
             console.error("Error checking job status:", error);
             setIsPolling(false);
             if (optionsRef.current?.onError) {
-                optionsRef.current.onError(error.message || "Failed to check job status");
+                optionsRef.current.onError(error instanceof Error ? error.message : "Failed to check job status");
             }
         }
     }, [jobId, jobType]);
 
-    // Start polling when jobId is set
-    useEffect(() => {
+    // Start polling when jobId is set (render-time adjustment)
+    const [prevJobId, setPrevJobId] = useState(jobId);
+    if (jobId !== prevJobId) {
+        setPrevJobId(jobId);
         if (jobId) {
             setIsPolling(true);
         }
-    }, [jobId]);
+    }
 
     // Poll for status updates
     useEffect(() => {
@@ -80,12 +84,13 @@ export function useJobStatus(
 
         cancelledRef.current = false;
 
-        checkStatus();
-
+        // Defer initial check to avoid synchronous setState in effect
+        const initialTimeout = setTimeout(checkStatus, 0);
         const interval = setInterval(checkStatus, pollInterval);
 
         return () => {
             cancelledRef.current = true;
+            clearTimeout(initialTimeout);
             clearInterval(interval);
         };
     }, [isPolling, jobId, checkStatus, pollInterval]);

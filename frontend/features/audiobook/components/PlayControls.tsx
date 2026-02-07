@@ -2,9 +2,10 @@
 
 import { Button } from "@/components/ui/Button";
 import { Play, Pause, Book } from "lucide-react";
+import type { Audiobook } from "../types";
 
 interface PlayControlsProps {
-  audiobook: any;
+  audiobook: Audiobook;
   isThisBookPlaying: boolean;
   isPlaying: boolean;
   currentTime: number;

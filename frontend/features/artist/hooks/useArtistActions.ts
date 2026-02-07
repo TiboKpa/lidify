@@ -4,6 +4,15 @@ import { useAudioControls } from '@/lib/audio-context';
 import { Artist, Album, Track } from '../types';
 import { shuffleArray } from '@/utils/shuffle';
 
+interface FormattedTrack {
+  id: string;
+  title: string;
+  trackNumber: number;
+  artist: { name: string; id: string };
+  album: { title: string; coverArt?: string; id: string; year?: number };
+  duration: number;
+}
+
 export function useArtistActions() {
   // Use controls-only hook to avoid re-renders from playback state changes
   const { playTrack: playTrackFromContext, playTracks } = useAudioControls();
@@ -27,13 +36,13 @@ export function useArtistActions() {
     const albumsData = await Promise.all(albumDataPromises);
 
     // Combine all tracks, maintaining album order (newest first)
-    const allTracks: any[] = [];
+    const allTracks: FormattedTrack[] = [];
 
     albumsData.forEach((albumData, index) => {
       if (!albumData || !albumData.tracks) return;
 
       const album = ownedAlbums[index];
-      const formattedTracks = albumData.tracks.map((track: any) => ({
+      const formattedTracks = albumData.tracks.map((track: Record<string, unknown>) => ({
         id: track.id,
         title: track.title,
         trackNumber: track.trackNumber || 0,
@@ -48,7 +57,7 @@ export function useArtistActions() {
       }));
 
       // Sort tracks within album by track number
-      formattedTracks.sort((a: any, b: any) => a.trackNumber - b.trackNumber);
+      formattedTracks.sort((a, b) => a.trackNumber - b.trackNumber);
       allTracks.push(...formattedTracks);
     });
 

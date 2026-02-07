@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, Suspense } from "react";
+import { formatTime } from "@/utils/formatTime";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import {
     ArrowLeft,
     Check,
@@ -314,7 +316,7 @@ function SpotifyImportPageContent() {
 
         setIsCancelling(true);
         try {
-            const result = await api.post<{
+            await api.post<{
                 message: string;
                 playlistId: string | null;
                 tracksMatched: number;
@@ -343,12 +345,6 @@ function SpotifyImportPageContent() {
         }
     };
 
-    // Format duration
-    const formatDuration = (ms: number) => {
-        const minutes = Math.floor(ms / 60000);
-        const seconds = Math.floor((ms % 60000) / 1000);
-        return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-    };
 
     return (
         <div className="min-h-screen relative">
@@ -388,12 +384,12 @@ function SpotifyImportPageContent() {
                 <div className="mb-6 p-4 bg-white/5 rounded-lg border border-white/10">
                     <p className="text-sm text-gray-300">
                         Looking for playlists to import?{" "}
-                        <a
+                        <Link
                             href="/browse/playlists"
                             className="text-[#ecb200] hover:underline font-medium"
                         >
                             Browse Deezer playlists & radio stations →
-                        </a>
+                        </Link>
                     </p>
                 </div>
 
@@ -601,9 +597,9 @@ function SpotifyImportPageContent() {
                                                         </div>
                                                     </div>
                                                     <span className="text-xs text-gray-600">
-                                                        {formatDuration(
-                                                            match.spotifyTrack
-                                                                .durationMs
+                                                        {formatTime(
+                                                            Math.round(match.spotifyTrack
+                                                                .durationMs / 1000)
                                                         )}
                                                     </span>
                                                 </div>

@@ -84,7 +84,7 @@ async function fetchAndCacheImage(request) {
     }
 
     return networkResponse;
-  } catch (error) {
+  } catch {
     // Network failed, return a placeholder or error
     return new Response('Image unavailable', { status: 503 });
   }

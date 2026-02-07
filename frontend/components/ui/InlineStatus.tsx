@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Check, X, Loader2, AlertCircle } from "lucide-react";
+import { Check, X, Loader2 } from "lucide-react";
 import { cn } from "@/utils/cn";
 
 export type StatusType = "idle" | "loading" | "success" | "error";
@@ -31,21 +31,21 @@ export function InlineStatus({
 }: InlineStatusProps) {
     const [visible, setVisible] = useState(status !== "idle");
 
+    // Sync visibility with status changes during render
+    const [prevStatus, setPrevStatus] = useState(status);
+    if (status !== prevStatus) {
+        setPrevStatus(status);
+        setVisible(status !== "idle");
+    }
+
+    // Auto-clear success/error after delay
     useEffect(() => {
-        if (status === "success" || status === "error") {
-            setVisible(true);
-            
-            if (autoClear) {
-                const timer = setTimeout(() => {
-                    setVisible(false);
-                    onClear?.();
-                }, clearDelay);
-                return () => clearTimeout(timer);
-            }
-        } else if (status === "loading") {
-            setVisible(true);
-        } else {
-            setVisible(false);
+        if ((status === "success" || status === "error") && autoClear) {
+            const timer = setTimeout(() => {
+                setVisible(false);
+                onClear?.();
+            }, clearDelay);
+            return () => clearTimeout(timer);
         }
     }, [status, autoClear, clearDelay, onClear]);
 
@@ -128,7 +128,7 @@ export function ConnectionTestButton({
     className,
     disabled,
 }: ConnectionTestButtonProps) {
-    const { status, message, setSuccess, setError, setLoading, reset, props } = useInlineStatus();
+    const { status, setSuccess, setError, setLoading, props } = useInlineStatus();
 
     const handleTest = async () => {
         setLoading("Testing...");
@@ -141,8 +141,8 @@ export function ConnectionTestButton({
             } else {
                 setSuccess("Connected");
             }
-        } catch (err: any) {
-            setError(err.message || "Failed");
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed");
         }
     };
 
@@ -188,8 +188,8 @@ export function SaveButton({
         try {
             await onSave();
             setSuccess("Saved");
-        } catch (err: any) {
-            setError(err.message || "Failed");
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed");
         }
     };
 

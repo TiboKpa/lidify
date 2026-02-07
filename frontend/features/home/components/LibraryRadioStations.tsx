@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { shuffleArray } from "@/utils/shuffle";
 import {
     Radio,
     Play,
@@ -202,9 +203,7 @@ export function LibraryRadioStations() {
                 return;
             }
 
-            const shuffled = [...response.tracks].sort(
-                () => Math.random() - 0.5
-            );
+            const shuffled = shuffleArray(response.tracks);
             playTracks(shuffled, 0);
             toast.success(`${station.name} Radio`, {
                 description: `Shuffling ${shuffled.length} tracks`,
@@ -257,7 +256,7 @@ export function LibraryRadioStations() {
         return pages;
     }, [allStations]);
 
-    const checkScroll = () => {
+    const checkScroll = useCallback(() => {
         const el = scrollRef.current;
         if (!el) return;
         setCanScrollLeft(el.scrollLeft > 0);
@@ -269,7 +268,7 @@ export function LibraryRadioStations() {
             const newPage = Math.round(el.scrollLeft / pageWidth);
             setCurrentPage(newPage);
         }
-    };
+    }, [isMobileOrTablet]);
 
     useEffect(() => {
         checkScroll();
@@ -282,7 +281,7 @@ export function LibraryRadioStations() {
             if (el) el.removeEventListener("scroll", checkScroll);
             window.removeEventListener("resize", checkScroll);
         };
-    }, [stationPages, isMobileOrTablet]);
+    }, [stationPages, isMobileOrTablet, checkScroll]);
 
     const scroll = (direction: "left" | "right") => {
         const el = scrollRef.current;

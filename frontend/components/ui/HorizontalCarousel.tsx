@@ -16,7 +16,7 @@ interface HorizontalCarouselProps {
 export function HorizontalCarousel({
     children,
     className,
-    itemClassName,
+    itemClassName: _itemClassName,
     showArrows = true,
     gap = "md",
 }: HorizontalCarouselProps) {

@@ -1,8 +1,9 @@
-import { Play, Pause, Heart, Music } from "lucide-react";
+import { Play, Heart, Music } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/utils/cn";
 import { DiscoverTrack } from "../types";
 import { api } from "@/lib/api";
+import { formatTime } from "@/utils/formatTime";
 
 const tierColors: Record<string, string> = {
     high: "text-green-400",
@@ -39,15 +40,6 @@ export function TrackList({
     onTogglePlay,
     onLike,
 }: TrackListProps) {
-    const formatDuration = (seconds: number) => {
-        // Defensive handling for invalid/missing duration
-        if (!seconds || isNaN(seconds) || seconds < 0) {
-            return "--:--";
-        }
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, "0")}`;
-    };
 
     return (
         <div className="w-full">
@@ -178,7 +170,7 @@ export function TrackList({
                                     />
                                 </button>
                                 <span className="text-sm text-gray-400 w-10 text-right">
-                                    {formatDuration(track.duration)}
+                                    {formatTime(track.duration)}
                                 </span>
                             </div>
                         </div>

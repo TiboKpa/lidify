@@ -4,7 +4,7 @@ import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAudioState, useAudioPlayback, useAudioControls } from "@/lib/audio-context";
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
-import { useImageColor, getPlayButtonStyles } from "@/hooks/useImageColor";
+import { useImageColor } from "@/hooks/useImageColor";
 import { api } from "@/lib/api";
 import { PlaylistSelector } from "@/components/ui/PlaylistSelector";
 import { useDownloadContext } from "@/lib/download-context";
@@ -12,7 +12,8 @@ import { useDownloadContext } from "@/lib/download-context";
 // Custom hooks
 import { useAlbumData } from "@/features/album/hooks/useAlbumData";
 import { useAlbumActions } from "@/features/album/hooks/useAlbumActions";
-import { useTrackPreview } from "@/features/album/hooks/useTrackPreview";
+import { useTrackPreview } from "@/hooks/useTrackPreview";
+import type { Track as AlbumTrack } from "@/features/album/types";
 
 // Components
 import { AlbumHero } from "@/features/album/components/AlbumHero";
@@ -37,8 +38,8 @@ export default function AlbumPage({ params }: AlbumPageProps) {
     // State
     const [showPlaylistSelector, setShowPlaylistSelector] = useState(false);
     const [pendingTrackIds, setPendingTrackIds] = useState<string[]>([]);
-    const [isBulkAdd, setIsBulkAdd] = useState(false);
-    const [isAddingToPlaylist, setIsAddingToPlaylist] = useState(false);
+    const [, setIsBulkAdd] = useState(false);
+    const [, setIsAddingToPlaylist] = useState(false);
 
     // Custom hooks
     const { album, source, loading, reloadAlbum } = useAlbumData(id);
@@ -89,7 +90,7 @@ export default function AlbumPage({ params }: AlbumPageProps) {
     }
 
     // Event handlers
-    const handlePlayTrack = (track: any, index: number) => {
+    const handlePlayTrack = (_track: AlbumTrack, index: number) => {
         playAlbum(album, index);
     };
 
@@ -103,7 +104,7 @@ export default function AlbumPage({ params }: AlbumPageProps) {
     const handleAddAlbumToPlaylist = () => {
         if (!album?.tracks?.length) return;
         const trackIds = album.tracks
-            .map((track: any) => track.id)
+            .map((track: AlbumTrack) => track.id)
             .filter(Boolean);
         openPlaylistSelector(trackIds, true);
     };
@@ -187,13 +188,13 @@ export default function AlbumPage({ params }: AlbumPageProps) {
                             currentTrackId={currentTrack?.id}
                             colors={colors}
                             onPlayTrack={handlePlayTrack}
-                            onAddToQueue={(track: any) =>
+                            onAddToQueue={(track: AlbumTrack) =>
                                 addToQueue(track, album)
                             }
                             onAddToPlaylist={handleAddToPlaylist}
                             previewTrack={previewTrack}
                             previewPlaying={previewPlaying}
-                            onPreview={(track: any, e: React.MouseEvent) =>
+                            onPreview={(track: AlbumTrack, e: React.MouseEvent) =>
                                 handlePreview(
                                     track,
                                     album.artist?.name || "",

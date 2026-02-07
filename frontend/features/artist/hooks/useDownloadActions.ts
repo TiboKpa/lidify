@@ -41,9 +41,9 @@ export function useDownloadActions() {
         toast.success(`Downloading ${artist.name}`, {
           id: `download-${artist.mbid}`,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Failed to download artist:', error);
-        toast.error(error.message || 'Failed to download artist', {
+        toast.error(error instanceof Error ? error.message : 'Failed to download artist', {
           id: `download-${artist.mbid}`,
         });
       }
@@ -86,9 +86,9 @@ export function useDownloadActions() {
         toast.success(`Downloading ${album.title}`, {
           id: `download-${mbid}`,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Failed to download album:', error);
-        toast.error(error.message || 'Failed to download album', {
+        toast.error(error instanceof Error ? error.message : 'Failed to download album', {
           id: `download-${mbid}`,
         });
       }

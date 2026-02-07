@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Album, ArtistSource } from "../types";
+import type { ColorPalette } from "@/hooks/useImageColor";
 import { PlayableCard } from "@/components/ui/PlayableCard";
 import { Disc3 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -10,7 +11,7 @@ interface AvailableAlbumsProps {
     albums: Album[];
     artistName: string;
     source: ArtistSource;
-    colors: any;
+    colors: ColorPalette | null;
     onDownloadAlbum: (album: Album, e: React.MouseEvent) => void;
     isPendingDownload: (mbid: string) => boolean;
 }
@@ -26,7 +27,7 @@ function LazyAlbumCard({
 }: {
     album: Album;
     source: ArtistSource;
-    colors: any;
+    colors: ColorPalette | null;
     onDownloadAlbum: (album: Album, e: React.MouseEvent) => void;
     isPendingDownload: (mbid: string) => boolean;
     index: number;
@@ -127,7 +128,7 @@ function AlbumGrid({
 
 export function AvailableAlbums({
     albums,
-    artistName,
+    artistName: _artistName,
     source,
     colors,
     onDownloadAlbum,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { formatTime } from "@/utils/formatTime";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -62,12 +63,12 @@ export default function DeezerPlaylistDetailPage() {
     const [playlist, setPlaylist] = useState<DeezerPlaylistFull | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [isImporting, setIsImporting] = useState(false);
+    const [isImporting] = useState(false);
 
     // Preview playback state
     const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
     const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
-    const [previewVolume, setPreviewVolume] = useState(0.5);
+    const [previewVolume] = useState(0.5);
     const [isMuted, setIsMuted] = useState(false);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -118,7 +119,7 @@ export default function DeezerPlaylistDetailPage() {
                 audioRef.current.pause();
                 setIsPreviewPlaying(false);
             } else if (audioRef.current) {
-                audioRef.current.play();
+                audioRef.current.play().catch(() => setIsPreviewPlaying(false));
                 setIsPreviewPlaying(true);
             }
             return;
@@ -145,7 +146,10 @@ export default function DeezerPlaylistDetailPage() {
             setIsPreviewPlaying(false);
         };
 
-        audio.play();
+        audio.play().catch(() => {
+            setPlayingTrackId(null);
+            setIsPreviewPlaying(false);
+        });
         setPlayingTrackId(track.deezerId);
         setIsPreviewPlaying(true);
     };
@@ -177,12 +181,6 @@ export default function DeezerPlaylistDetailPage() {
         );
     };
 
-    // Format duration
-    const formatDuration = (ms: number) => {
-        const minutes = Math.floor(ms / 60000);
-        const seconds = Math.floor((ms % 60000) / 1000);
-        return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-    };
 
     // Calculate total duration
     const totalDuration = playlist?.tracks.reduce(
@@ -462,7 +460,7 @@ export default function DeezerPlaylistDetailPage() {
                                         {/* Duration */}
                                         <div className="flex items-center justify-end">
                                             <span className="text-sm text-gray-400">
-                                                {formatDuration(track.durationMs)}
+                                                {formatTime(Math.round(track.durationMs / 1000))}
                                             </span>
                                         </div>
                                     </div>

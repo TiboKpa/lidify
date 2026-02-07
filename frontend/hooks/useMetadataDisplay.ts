@@ -25,18 +25,38 @@ interface AlbumDisplayData {
     originalYear?: number | null;
 }
 
-interface TrackDisplayData {
-    title: string;
-    trackNo: number | null;
-    hasUserOverrides: boolean;
-    // Original value for tooltip/reset display
-    originalTitle?: string;
+interface ArtistMetadata {
+    name?: string;
+    displayName?: string | null;
+    summary?: string | null;
+    bio?: string | null;
+    userSummary?: string | null;
+    heroUrl?: string | null;
+    userHeroUrl?: string | null;
+    image?: string | null;
+    genres?: string[];
+    tags?: string[];
+    userGenres?: string[];
+    hasUserOverrides?: boolean;
 }
+
+interface AlbumMetadata {
+    title?: string;
+    displayTitle?: string | null;
+    year?: number | null;
+    displayYear?: number | null;
+    coverUrl?: string | null;
+    userCoverUrl?: string | null;
+    genres?: string[];
+    userGenres?: string[];
+    hasUserOverrides?: boolean;
+}
+
 
 /**
  * Compute display data for an artist, merging user overrides with canonical data
  */
-export function useArtistDisplayData(artist: any): ArtistDisplayData {
+export function useArtistDisplayData(artist: ArtistMetadata | null): ArtistDisplayData {
     if (!artist) {
         return {
             name: "Unknown Artist",
@@ -55,7 +75,7 @@ export function useArtistDisplayData(artist: any): ArtistDisplayData {
         hasUserOverrides: artist.hasUserOverrides ?? false,
         originalName: artist.displayName ? artist.name : undefined,
         originalSummary: artist.userSummary
-            ? artist.summary ?? artist.bio
+            ? (artist.summary ?? artist.bio ?? undefined)
             : undefined,
     };
 }
@@ -63,7 +83,7 @@ export function useArtistDisplayData(artist: any): ArtistDisplayData {
 /**
  * Compute display data for an album, merging user overrides with canonical data
  */
-export function useAlbumDisplayData(album: any): AlbumDisplayData {
+export function useAlbumDisplayData(album: AlbumMetadata | null): AlbumDisplayData {
     if (!album) {
         return {
             title: "Unknown Album",
@@ -88,25 +108,6 @@ export function useAlbumDisplayData(album: any): AlbumDisplayData {
     };
 }
 
-/**
- * Compute display data for a track, merging user overrides with canonical data
- */
-export function useTrackDisplayData(track: any): TrackDisplayData {
-    if (!track) {
-        return {
-            title: "Unknown Track",
-            trackNo: null,
-            hasUserOverrides: false,
-        };
-    }
-
-    return {
-        title: track.displayTitle ?? track.title ?? "Unknown Track",
-        trackNo: track.displayTrackNo ?? track.trackNo ?? null,
-        hasUserOverrides: track.hasUserOverrides ?? false,
-        originalTitle: track.displayTitle ? track.title : undefined,
-    };
-}
 
 /**
  * Merge user genres with canonical genres (user genres first for priority)

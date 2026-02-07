@@ -95,4 +95,5 @@ export interface SoulseekResult {
     format: string;
     parsedArtist?: string;
     parsedAlbum?: string;
+    parsedTitle?: string;
 }

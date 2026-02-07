@@ -49,7 +49,13 @@ const STORAGE_KEYS = {
 
 export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
     const [isPlaying, setIsPlaying] = useState(false);
-    const [currentTime, setCurrentTime] = useState(0);
+    const [currentTime, setCurrentTime] = useState(() => {
+        if (typeof window === "undefined") return 0;
+        try {
+            const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_TIME);
+            return saved ? parseFloat(saved) : 0;
+        } catch { return 0; }
+    });
     const [duration, setDuration] = useState(0);
     const [isBuffering, setIsBuffering] = useState(false);
     const [targetSeekPosition, setTargetSeekPosition] = useState<number | null>(
@@ -61,7 +67,7 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
     );
     const [audioError, setAudioError] = useState<string | null>(null);
     const [playbackState, setPlaybackState] = useState<PlaybackState>("IDLE");
-    const [isHydrated, setIsHydrated] = useState(false);
+    const [isHydrated] = useState(() => typeof window !== "undefined");
     const lastSaveTimeRef = useRef<number>(0);
 
     // Clear audio error
@@ -156,44 +162,27 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
         [isSeekLocked]
     );
 
-    // Restore currentTime from localStorage on mount
-    // NOTE: Do NOT touch isPlaying here - let user actions control it
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-
-        try {
-            const savedTime = localStorage.getItem(STORAGE_KEYS.CURRENT_TIME);
-            if (savedTime) setCurrentTime(parseFloat(savedTime));
-            // Don't force pause - this was causing immediate pause after play!
-        } catch (error) {
-            console.error("[AudioPlayback] Failed to restore state:", error);
-        }
-        setIsHydrated(true);
-    }, []);
+    // currentTime and isHydrated are initialized via lazy useState from localStorage
 
     // Get state from AudioStateContext for position sync
     const state = useAudioState();
 
-    // Sync currentTime from audiobook/podcast progress when not playing
-    // This ensures the UI shows the correct saved position on page load
-    useEffect(() => {
-        if (!isHydrated) return;
-        if (isPlaying) return; // Don't override during active playback
+    // Sync currentTime from audiobook/podcast progress when not playing (render-time adjustment)
+    const progressKey = isHydrated && !isPlaying
+        ? `${state.playbackType}-${state.currentAudiobook?.progress?.currentTime}-${state.currentPodcast?.progress?.currentTime}`
+        : null;
+    const [prevProgressKey, setPrevProgressKey] = useState<string | null>(progressKey);
 
-        const { currentAudiobook, currentPodcast, playbackType } = state;
-
-        if (playbackType === "audiobook" && currentAudiobook?.progress?.currentTime) {
-            setCurrentTime(currentAudiobook.progress.currentTime);
-        } else if (playbackType === "podcast" && currentPodcast?.progress?.currentTime) {
-            setCurrentTime(currentPodcast.progress.currentTime);
+    if (progressKey !== prevProgressKey) {
+        setPrevProgressKey(progressKey);
+        if (progressKey !== null) {
+            if (state.playbackType === "audiobook" && state.currentAudiobook?.progress?.currentTime) {
+                setCurrentTime(state.currentAudiobook.progress.currentTime);
+            } else if (state.playbackType === "podcast" && state.currentPodcast?.progress?.currentTime) {
+                setCurrentTime(state.currentPodcast.progress.currentTime);
+            }
         }
-    }, [
-        isHydrated,
-        isPlaying,
-        state.currentAudiobook?.progress?.currentTime,
-        state.currentPodcast?.progress?.currentTime,
-        state.playbackType,
-    ]);
+    }
 
     // Cleanup seek lock timeout on unmount
     useEffect(() => {

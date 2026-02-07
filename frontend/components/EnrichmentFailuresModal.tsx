@@ -2,14 +2,13 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { enrichmentApi, EnrichmentFailure } from "@/lib/enrichmentApi";
+import { enrichmentApi } from "@/lib/enrichmentApi";
 import {
     X,
     RefreshCw,
     SkipForward,
     Trash2,
     AlertCircle,
-    Filter,
 } from "lucide-react";
 
 interface EnrichmentFailuresModalProps {
@@ -36,11 +35,10 @@ export function EnrichmentFailuresModal({
     const {
         data: failures,
         isLoading,
-        refetch,
     } = useQuery({
         queryKey: ["enrichment-failures", selectedType, currentPage],
         queryFn: async () => {
-            const params: any = {
+            const params: Record<string, string | number | boolean> = {
                 limit: pageSize,
                 offset: (currentPage - 1) * pageSize,
                 resolved: false,

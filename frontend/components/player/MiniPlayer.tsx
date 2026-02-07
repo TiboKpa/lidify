@@ -1,7 +1,7 @@
 "use client";
 
 import { useAudio } from "@/lib/audio-context";
-import { api } from "@/lib/api";
+import { useMediaInfo } from "@/hooks/useMediaInfo";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 import Image from "next/image";
 import Link from "next/link";
@@ -34,7 +34,6 @@ import { KeyboardShortcutsTooltip } from "./KeyboardShortcutsTooltip";
 import { SeekSlider } from "./SeekSlider";
 import { useFeatures } from "@/lib/features-context";
 
-// Lazy load VibeOverlayEnhanced - only loads when vibe mode is active
 const EnhancedVibeOverlay = lazy(() => import("./VibeOverlayEnhanced").then(mod => ({ default: mod.EnhancedVibeOverlay })));
 
 export function MiniPlayer() {
@@ -135,42 +134,7 @@ export function MiniPlayer() {
         }
     };
 
-    const hasMedia = !!(currentTrack || currentAudiobook || currentPodcast);
-
-    // Get current media info
-    let title = "";
-    let subtitle = "";
-    let coverUrl: string | null = null;
-    let mediaLink: string | null = null;
-
-    if (playbackType === "track" && currentTrack) {
-        title = currentTrack.title;
-        subtitle = currentTrack.artist?.name || "Unknown Artist";
-        coverUrl = currentTrack.album?.coverArt
-            ? api.getCoverArtUrl(currentTrack.album.coverArt, 100)
-            : null;
-        mediaLink = currentTrack.album?.id
-            ? `/album/${currentTrack.album.id}`
-            : null;
-    } else if (playbackType === "audiobook" && currentAudiobook) {
-        title = currentAudiobook.title;
-        subtitle = currentAudiobook.author;
-        coverUrl = currentAudiobook.coverUrl
-            ? api.getCoverArtUrl(currentAudiobook.coverUrl, 100)
-            : null;
-        mediaLink = `/audiobooks/${currentAudiobook.id}`;
-    } else if (playbackType === "podcast" && currentPodcast) {
-        title = currentPodcast.title;
-        subtitle = currentPodcast.podcastTitle;
-        coverUrl = currentPodcast.coverUrl
-            ? api.getCoverArtUrl(currentPodcast.coverUrl, 100)
-            : null;
-        const podcastId = currentPodcast.id.split(":")[0];
-        mediaLink = `/podcasts/${podcastId}`;
-    } else {
-        title = "Not Playing";
-        subtitle = "Select something to play";
-    }
+    const { title, subtitle, coverUrl, mediaLink, hasMedia } = useMediaInfo(100);
 
     // Check if controls should be enabled (only for tracks)
     const canSkip = playbackType === "track";
@@ -204,8 +168,6 @@ export function MiniPlayer() {
     const handleSeek = (time: number) => {
         seek(time);
     };
-
-    const seekEnabled = hasMedia && canSeek;
 
     if (isMobileOrTablet) {
         // Don't render if no media

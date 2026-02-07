@@ -41,12 +41,12 @@ export function HowItWorks() {
                 </div>
                 <div className="flex items-start gap-3">
                     <ChevronRight className="w-4 h-4 mt-0.5 text-purple-400/60 shrink-0" />
-                    <p>Albums won't repeat for 6 months</p>
+                    <p>Albums won&apos;t repeat for 6 months</p>
                 </div>
                 <div className="flex items-start gap-3">
                     <ChevronRight className="w-4 h-4 mt-0.5 text-purple-400/60 shrink-0" />
                     <p>
-                        If albums aren't available, they're automatically
+                        If albums aren&apos;t available, they&apos;re automatically
                         replaced and you can still preview them via Deezer
                     </p>
                 </div>

@@ -4,6 +4,7 @@ import { Music2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { HorizontalCarousel, CarouselItem } from "@/components/ui/HorizontalCarousel";
 import { memo, useCallback } from "react";
+import Image from "next/image";
 
 interface PlaylistPreview {
     id: string;
@@ -45,10 +46,12 @@ const PlaylistCard = memo(function PlaylistCard({
             >
                 <div className="relative aspect-square mb-3 rounded-md overflow-hidden bg-[#282828] shadow-lg">
                     {playlist.imageUrl ? (
-                        <img
+                        <Image
                             src={playlist.imageUrl}
                             alt={playlist.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            fill
+                            className="object-cover group-hover:scale-105 transition-transform duration-300"
+                            unoptimized
                         />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#AD47FF]/30 to-[#AD47FF]/10">

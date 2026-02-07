@@ -1,10 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Track } from "../types";
 import { howlerEngine } from "@/lib/howler-engine";
 
-export function useTrackPreview() {
+interface PreviewableTrack {
+    id: string;
+    title: string;
+}
+
+export function useTrackPreview<T extends PreviewableTrack>() {
     const [previewTrack, setPreviewTrack] = useState<string | null>(null);
     const [previewPlaying, setPreviewPlaying] = useState(false);
     const previewAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -30,12 +34,11 @@ export function useTrackPreview() {
     const showNoPreviewToast = (trackId: string) => {
         if (toastShownForNoPreviewRef.current.has(trackId)) return;
         toastShownForNoPreviewRef.current.add(trackId);
-        // Small, out-of-the-way notification (not an "error" state)
         toast("No Deezer preview available", { duration: 1500 });
     };
 
     const handlePreview = async (
-        track: Track,
+        track: T,
         artistName: string,
         e: React.MouseEvent
     ) => {
@@ -43,16 +46,24 @@ export function useTrackPreview() {
 
         // If the same track is playing, pause it
         if (previewTrack === track.id && previewPlaying) {
-            if (previewAudioRef.current) {
-                previewAudioRef.current.pause();
-                setPreviewPlaying(false);
-                // Don't auto-resume main player - let user manually click play
-                // This prevents the "pop in" effect when spam-clicking preview
-            }
+            previewAudioRef.current?.pause();
+            setPreviewPlaying(false);
             return;
         }
 
-        // If a different track is playing, stop it first
+        // If the same track is paused, resume it
+        if (previewTrack === track.id && !previewPlaying && previewAudioRef.current) {
+            try {
+                await previewAudioRef.current.play();
+            } catch (err: unknown) {
+                if (isAbortError(err)) return;
+                console.error("Preview error:", err);
+            }
+            setPreviewPlaying(true);
+            return;
+        }
+
+        // Different track -- stop current and play new
         if (previewAudioRef.current) {
             previewAudioRef.current.pause();
             previewAudioRef.current = null;
@@ -68,7 +79,6 @@ export function useTrackPreview() {
             const requestId = ++previewRequestIdRef.current;
             inFlightTrackIdRef.current = track.id;
 
-            // Fetch preview URL
             const response = await api.getTrackPreview(artistName, track.title);
             if (requestId !== previewRequestIdRef.current) return;
 
@@ -78,21 +88,17 @@ export function useTrackPreview() {
                 return;
             }
 
-            // Pause the main player if it's playing
             if (howlerEngine.isPlaying()) {
                 howlerEngine.pause();
                 mainPlayerWasPausedRef.current = true;
             }
 
-            // Create new audio element
             const audio = new Audio(response.previewUrl);
             previewAudioRef.current = audio;
 
-            // Set up event handlers
             audio.onended = () => {
                 setPreviewPlaying(false);
                 setPreviewTrack(null);
-                // Don't auto-resume main player - let user manually click play
                 mainPlayerWasPausedRef.current = false;
             };
 
@@ -102,7 +108,6 @@ export function useTrackPreview() {
                 setPreviewTrack(null);
             };
 
-            // Play audio
             try {
                 await audio.play();
             } catch (err: unknown) {
@@ -137,7 +142,6 @@ export function useTrackPreview() {
         }
     };
 
-    // Stop preview when main player starts playing
     useEffect(() => {
         const stopPreview = () => {
             if (previewAudioRef.current) {
@@ -145,7 +149,6 @@ export function useTrackPreview() {
                 previewAudioRef.current = null;
                 setPreviewPlaying(false);
                 setPreviewTrack(null);
-                // Don't resume main player - it's already playing
                 mainPlayerWasPausedRef.current = false;
             }
         };
@@ -156,14 +159,12 @@ export function useTrackPreview() {
         };
     }, []);
 
-    // Cleanup effect: Stop audio on unmount
     useEffect(() => {
         return () => {
             if (previewAudioRef.current) {
                 previewAudioRef.current.pause();
                 previewAudioRef.current = null;
             }
-            // Don't auto-resume main player on unmount
             mainPlayerWasPausedRef.current = false;
         };
     }, []);

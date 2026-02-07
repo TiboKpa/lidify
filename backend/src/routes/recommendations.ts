@@ -201,40 +201,58 @@ router.get("/", async (req, res) => {
             take: 20,
         });
 
-        // Fetch full artist details for each similar artist
-        const recommendations = await Promise.all(
-            similarArtists.map(async (similar) => {
-                const artist = await prisma.artist.findUnique({
-                    where: { id: similar.toArtistId },
-                });
+        // Batch fetch all data instead of N+1 queries per similar artist
+        const similarArtistIds = similarArtists.map((s) => s.toArtistId);
 
-                const albums = await prisma.album.findMany({
-                    where: { artistId: similar.toArtistId },
-                    orderBy: { year: "desc" },
-                    take: 3,
-                });
+        const [artists, albums, ownedAlbums] = await Promise.all([
+            prisma.artist.findMany({
+                where: { id: { in: similarArtistIds } },
+                select: { id: true, mbid: true, name: true, heroUrl: true },
+            }),
+            prisma.album.findMany({
+                where: { artistId: { in: similarArtistIds } },
+                include: { artist: true },
+                orderBy: { year: "desc" },
+            }),
+            prisma.ownedAlbum.findMany({
+                where: { artistId: { in: similarArtistIds } },
+                select: { artistId: true, rgMbid: true },
+            }),
+        ]);
 
-                const ownedAlbums = await prisma.ownedAlbum.findMany({
-                    where: { artistId: similar.toArtistId },
-                });
+        const artistMap = new Map(artists.map((a) => [a.id, a]));
+        const albumsByArtist = new Map<string, typeof albums>();
+        for (const album of albums) {
+            const list = albumsByArtist.get(album.artistId) || [];
+            list.push(album);
+            albumsByArtist.set(album.artistId, list);
+        }
+        const ownedByArtist = new Map<string, Set<string>>();
+        for (const o of ownedAlbums) {
+            const set = ownedByArtist.get(o.artistId) || new Set();
+            set.add(o.rgMbid);
+            ownedByArtist.set(o.artistId, set);
+        }
 
-                const ownedRgMbids = new Set(ownedAlbums.map((o) => o.rgMbid));
+        const recommendations = similarArtists.map((similar) => {
+            const artist = artistMap.get(similar.toArtistId);
+            const artistAlbums = (albumsByArtist.get(similar.toArtistId) || []).slice(0, 3);
+            const ownedRgMbids = ownedByArtist.get(similar.toArtistId) || new Set();
 
-                return {
-                    artist: {
-                        id: artist?.id,
-                        mbid: artist?.mbid,
-                        name: artist?.name,
-                        heroUrl: artist?.heroUrl,
-                    },
-                    similarity: similar.weight,
-                    topAlbums: albums.map((album) => ({
-                        ...album,
-                        owned: ownedRgMbids.has(album.rgMbid),
-                    })),
-                };
-            })
-        );
+            return {
+                artist: {
+                    id: artist?.id,
+                    mbid: artist?.mbid,
+                    name: artist?.name,
+                    heroUrl: artist?.heroUrl,
+                },
+                similarity: similar.weight,
+                topAlbums: artistAlbums.map((album) => ({
+                    ...album,
+                    owned: ownedRgMbids.has(album.rgMbid),
+                })),
+            };
+        });
 
         res.json({
             seedArtist: {
@@ -338,21 +356,19 @@ router.get("/albums", async (req, res) => {
             new Map(allAlbums.map((album) => [album.id, album])).values()
         );
 
-        // Check ownership
-        const recommendations = await Promise.all(
-            uniqueAlbums.slice(0, 20).map(async (album) => {
-                const ownedAlbums = await prisma.ownedAlbum.findMany({
-                    where: { artistId: album.artistId },
-                });
+        // Batch check ownership instead of N+1
+        const slicedAlbums = uniqueAlbums.slice(0, 20);
+        const artistIdsForOwnership = [...new Set(slicedAlbums.map((a) => a.artistId))];
+        const ownedAlbumsForRec = await prisma.ownedAlbum.findMany({
+            where: { artistId: { in: artistIdsForOwnership } },
+            select: { rgMbid: true },
+        });
+        const ownedRgMbidSet = new Set(ownedAlbumsForRec.map((o) => o.rgMbid));
 
-                const ownedRgMbids = new Set(ownedAlbums.map((o) => o.rgMbid));
-
-                return {
-                    ...album,
-                    owned: ownedRgMbids.has(album.rgMbid),
-                };
-            })
-        );
+        const recommendations = slicedAlbums.map((album) => ({
+            ...album,
+            owned: ownedRgMbidSet.has(album.rgMbid),
+        }));
 
         res.json({
             seedAlbum: {
@@ -402,52 +418,43 @@ router.get("/tracks", async (req, res) => {
             20
         );
 
-        // Try to match similar tracks in our library
-        const recommendations = [];
+        // Batch match similar tracks in our library instead of N+1
+        const trackTitles = similarTracksFromLastFm.map((t: any) => t.name);
+        const matchedTracks = await prisma.track.findMany({
+            where: {
+                title: { in: trackTitles, mode: "insensitive" },
+            },
+            include: {
+                album: { include: { artist: true } },
+            },
+        });
 
-        for (const lfmTrack of similarTracksFromLastFm) {
-            const matchedTracks = await prisma.track.findMany({
-                where: {
-                    title: {
-                        contains: lfmTrack.name,
-                        mode: "insensitive",
-                    },
-                    album: {
-                        artist: {
-                            name: {
-                                contains: lfmTrack.artist?.name || "",
-                                mode: "insensitive",
-                            },
-                        },
-                    },
-                },
-                include: {
-                    album: {
-                        include: {
-                            artist: true,
-                        },
-                    },
-                },
-                take: 1,
-            });
+        // Index matched tracks by lowercase title+artist for lookup
+        const matchIndex = new Map<string, typeof matchedTracks[0]>();
+        for (const t of matchedTracks) {
+            const key = `${t.title.toLowerCase()}::${t.album.artist.name.toLowerCase()}`;
+            if (!matchIndex.has(key)) matchIndex.set(key, t);
+        }
 
-            if (matchedTracks.length > 0) {
-                recommendations.push({
-                    ...matchedTracks[0],
+        const recommendations = similarTracksFromLastFm.map((lfmTrack: any) => {
+            const key = `${lfmTrack.name.toLowerCase()}::${(lfmTrack.artist?.name || "").toLowerCase()}`;
+            const matched = matchIndex.get(key);
+
+            if (matched) {
+                return {
+                    ...matched,
                     inLibrary: true,
                     similarity: lfmTrack.match || 0,
-                });
-            } else {
-                // Include Last.fm suggestion even if not in library
-                recommendations.push({
-                    title: lfmTrack.name,
-                    artist: lfmTrack.artist?.name || "Unknown",
-                    inLibrary: false,
-                    similarity: lfmTrack.match || 0,
-                    lastFmUrl: lfmTrack.url,
-                });
+                };
             }
-        }
+            return {
+                title: lfmTrack.name,
+                artist: lfmTrack.artist?.name || "Unknown",
+                inLibrary: false,
+                similarity: lfmTrack.match || 0,
+                lastFmUrl: lfmTrack.url,
+            };
+        });
 
         res.json({
             seedTrack: {

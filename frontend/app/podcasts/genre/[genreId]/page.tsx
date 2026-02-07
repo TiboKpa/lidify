@@ -98,7 +98,8 @@ export default function GenrePage() {
     // Load initial podcasts
     useEffect(() => {
         loadMorePodcasts();
-    }, []); // Only on mount
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: initial load should not re-trigger when loadMorePodcasts identity changes
+    }, []);
 
     const handlePodcastClick = (podcast: Podcast) => {
         // Navigate to podcast preview page instead of auto-subscribing

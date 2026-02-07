@@ -8,7 +8,7 @@ export function useDiscoverActions(
     playlist: DiscoverPlaylist | null,
     onGenerationComplete?: () => void,
     isGenerating?: boolean,
-    refreshBatchStatus?: () => Promise<any>,
+    refreshBatchStatus?: () => Promise<unknown>,
     setPendingGeneration?: (pending: boolean) => void,
     updateTrackLiked?: (albumId: string, isLiked: boolean) => void
 ) {
@@ -34,19 +34,19 @@ export function useDiscoverActions(
             }
             
             toast.success("Generation started! Downloading albums...");
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Generation failed:", error);
             // Clear pending state on error
             setPendingGeneration?.(false);
-            
-            if (error.status === 409) {
+            const err = error as Error & { status?: number };
+            if (err.status === 409) {
                 toast.warning("A playlist is already being generated...");
                 // Refresh status in case UI is out of sync
                 if (refreshBatchStatus) {
                     await refreshBatchStatus();
                 }
             } else {
-                toast.error(error.message || "Failed to generate playlist");
+                toast.error(err.message || "Failed to generate playlist");
             }
         }
     }, [isGenerating, refreshBatchStatus, setPendingGeneration]);
@@ -69,11 +69,11 @@ export function useDiscoverActions(
 
                 // Reload to sync with server state
                 onGenerationComplete?.();
-            } catch (error: any) {
+            } catch (error: unknown) {
                 console.error("Like failed:", error);
                 // Revert optimistic update on error
                 updateTrackLiked?.(track.albumId, track.isLiked);
-                toast.error(error.message || "Failed to update");
+                toast.error(error instanceof Error ? error.message : "Failed to update");
             }
         },
         [onGenerationComplete, updateTrackLiked]

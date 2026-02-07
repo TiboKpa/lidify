@@ -75,15 +75,25 @@ export function useDiscoverData() {
   const startPolling = useCallback(() => {
     if (pollingRef.current) return; // Already polling
 
+    let errorCount = 0;
     pollingRef.current = setInterval(async () => {
       const status = await checkBatchStatus();
-      
-      // Only stop polling if:
-      // 1. Status is not active AND
-      // 2. We're not waiting for generation to start (pendingRef) AND
-      // 3. We previously had an active batch (wasActiveRef)
-      // This ensures we keep polling while waiting for the batch to be created
-      if (status && !status.active && !pendingRef.current && wasActiveRef.current) {
+
+      // Stop polling on repeated API failures
+      if (!status) {
+        errorCount++;
+        if (errorCount >= 5) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+        }
+        return;
+      }
+      errorCount = 0;
+
+      // Stop polling when batch is not active and we're not waiting for generation
+      if (!status.active && !pendingRef.current) {
         if (pollingRef.current) {
           clearInterval(pollingRef.current);
           pollingRef.current = null;
@@ -126,6 +136,7 @@ export function useDiscoverData() {
     return () => {
       stopPolling();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: initial data load and polling setup should not re-trigger on callback identity changes
   }, []);
 
   // Start polling when batch becomes active OR when generation is pending

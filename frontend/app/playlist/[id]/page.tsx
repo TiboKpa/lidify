@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { useAudioState, useAudioPlayback, useAudioControls, Track as AudioTrack } from "@/lib/audio-context";
 import { cn } from "@/utils/cn";
 import { shuffleArray } from "@/utils/shuffle";
+import { formatTime } from "@/utils/formatTime";
 import { usePlaylistQuery } from "@/hooks/useQueries";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/lib/toast-context";
@@ -22,7 +23,6 @@ import {
     ListPlus,
     ListMusic,
     Music,
-    Clock,
     Volume2,
     RefreshCw,
     AlertCircle,
@@ -201,7 +201,7 @@ export default function PlaylistDetailPage() {
             }
 
             // Update local state immediately
-            queryClient.setQueryData(["playlist", playlistId], (old: any) => ({
+            queryClient.setQueryData(["playlist", playlistId], (old: Record<string, unknown>) => ({
                 ...old,
                 isHidden: !playlist.isHidden,
             }));
@@ -364,11 +364,6 @@ export default function PlaylistDetailPage() {
         addToQueue(formattedTrack);
     };
 
-    const formatDuration = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, "0")}`;
-    };
 
     if (isLoading) {
         return (
@@ -819,7 +814,7 @@ export default function PlaylistDetailPage() {
                                                     <ListPlus className="w-4 h-4" />
                                                 </button>
                                                 <span className="text-sm text-gray-400 w-12 text-right">
-                                                    {formatDuration(
+                                                    {formatTime(
                                                         playlistItem.track
                                                             .duration
                                                     )}

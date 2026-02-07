@@ -47,15 +47,6 @@ export const authLimiter = rateLimit({
     ...trustProxyValidation,
 });
 
-// Media streaming limiter (higher limit: 200 streams/minute)
-export const streamLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 minute
-    max: 200, // Allow 200 stream requests per minute
-    message: "Too many streaming requests, please slow down.",
-    standardHeaders: true,
-    legacyHeaders: false,
-    ...trustProxyValidation,
-});
 
 // Image/Cover art limiter (very high limit: 500 req/minute)
 // This is for image proxying - not a security risk, just bandwidth

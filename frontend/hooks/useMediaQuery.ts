@@ -1,4 +1,4 @@
-import { useState, useEffect, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 
 /**
  * Hook to check if a media query matches
@@ -23,43 +23,6 @@ export function useMediaQuery(query: string): boolean {
         // Get server snapshot (always false on server)
         () => false
     );
-
-    return matches;
-}
-
-/**
- * Legacy implementation for reference - causes hydration flash
- * @deprecated Use the useSyncExternalStore version above
- */
-export function useMediaQueryLegacy(query: string): boolean {
-    const [matches, setMatches] = useState(false);
-
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-
-        const media = window.matchMedia(query);
-        setMatches(media.matches);
-
-        // Create listener
-        const listener = (e: MediaQueryListEvent) => setMatches(e.matches);
-
-        // Add listener
-        if (media.addEventListener) {
-            media.addEventListener("change", listener);
-        } else {
-            // Fallback for older browsers
-            media.addListener(listener);
-        }
-
-        // Cleanup
-        return () => {
-            if (media.removeEventListener) {
-                media.removeEventListener("change", listener);
-            } else {
-                media.removeListener(listener);
-            }
-        };
-    }, [query]);
 
     return matches;
 }

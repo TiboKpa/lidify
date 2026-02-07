@@ -24,7 +24,7 @@ export function usePerformanceMonitor(enabled = true) {
 
         try {
             longTaskObserver.observe({ entryTypes: ['longtask'] });
-        } catch (e) {
+        } catch {
             // longtask not supported in all browsers
             console.log('[PERF] Long task monitoring not supported');
         }
@@ -45,7 +45,7 @@ export function usePerformanceMonitor(enabled = true) {
 
         try {
             layoutShiftObserver.observe({ entryTypes: ['layout-shift'] });
-        } catch (e) {
+        } catch {
             // Not supported
         }
 

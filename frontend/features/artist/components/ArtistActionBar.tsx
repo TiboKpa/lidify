@@ -3,6 +3,7 @@ import { cn } from "@/utils/cn";
 import type { Artist } from "../types";
 import type { Album } from "../types";
 import type { ArtistSource } from "../types";
+import type { ColorPalette } from "@/hooks/useImageColor";
 
 const LIDIFY_YELLOW = "#ecb200";
 
@@ -10,7 +11,7 @@ interface ArtistActionBarProps {
     artist: Artist;
     albums: Album[];
     source: ArtistSource;
-    colors: any;
+    colors: ColorPalette | null;
     onPlayAll: () => void;
     onShuffle: () => void;
     onDownloadAll: () => void;
@@ -22,10 +23,10 @@ interface ArtistActionBarProps {
 }
 
 export function ArtistActionBar({
-    artist,
+    artist: _artist,
     albums,
     source,
-    colors,
+    colors: _colors,
     onPlayAll,
     onShuffle,
     onDownloadAll,

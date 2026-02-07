@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Album, AlbumSource } from "../types";
 import { ReactNode, lazy, Suspense } from "react";
 import { useAlbumDisplayData } from "@/hooks/useMetadataDisplay";
+import type { ColorPalette } from "@/hooks/useImageColor";
 
 // Lazy load MetadataEditor - modal component opened on user action
 const MetadataEditor = lazy(() => import("@/components/MetadataEditor").then(mod => ({ default: mod.MetadataEditor })));
@@ -14,7 +15,7 @@ interface AlbumHeroProps {
     album: Album;
     source: AlbumSource;
     coverUrl: string | null;
-    colors: any;
+    colors: ColorPalette | null;
     onReload: () => void;
     children?: ReactNode;
 }

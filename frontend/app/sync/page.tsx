@@ -7,7 +7,7 @@ import Image from "next/image";
 import { dispatchQueryEvent } from "@/lib/query-events";
 
 export default function SyncPage() {
-    const router = useRouter();
+    useRouter();
     const [syncing, setSyncing] = useState(true);
     const [progress, setProgress] = useState(0);
     const [message, setMessage] = useState("Scanning your music library...");
@@ -106,7 +106,7 @@ export default function SyncPage() {
                         console.error("Error polling scan status:", pollError);
                     }
                 }, 1000); // Poll every second
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Sync error:", err);
                 if (!mounted) return;
                 setError(

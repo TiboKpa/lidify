@@ -1,7 +1,7 @@
 "use client";
 
 import { useAudio } from "@/lib/audio-context";
-import { api } from "@/lib/api";
+import { useMediaInfo } from "@/hooks/useMediaInfo";
 import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState } from "react";
@@ -68,6 +68,7 @@ export function OverlayPlayer() {
     const [swipeOffset, setSwipeOffset] = useState(0);
     const [isVibeLoading, setIsVibeLoading] = useState(false);
     const { vibeEmbeddings, loading: featuresLoading } = useFeatures();
+    const { title, subtitle, coverUrl, artistLink, mediaLink } = useMediaInfo(500);
 
     const duration = (() => {
         if (playbackType === "podcast" && currentPodcast?.duration) {
@@ -112,7 +113,6 @@ export function OverlayPlayer() {
         duration > 0
             ? Math.min(100, Math.max(0, (displayTime / duration) * 100))
             : 0;
-    const seekEnabled = canSeek;
     const canSkip = playbackType === "track";
     const hasMedia = !!(currentTrack || currentAudiobook || currentPodcast);
 
@@ -175,44 +175,6 @@ export function OverlayPlayer() {
             setIsVibeLoading(false);
         }
     };
-
-    // Get current media info
-    let title = "";
-    let subtitle = "";
-    let coverUrl: string | null = null;
-    let albumLink: string | null = null;
-    let artistLink: string | null = null;
-    let mediaLink: string | null = null;
-
-    if (playbackType === "track" && currentTrack) {
-        title = currentTrack.title;
-        subtitle = currentTrack.artist?.name || "Unknown Artist";
-        coverUrl = currentTrack.album?.coverArt
-            ? api.getCoverArtUrl(currentTrack.album.coverArt, 500)
-            : null;
-        albumLink = currentTrack.album?.id
-            ? `/album/${currentTrack.album.id}`
-            : null;
-        artistLink = currentTrack.artist?.id
-            ? `/artist/${currentTrack.artist.mbid || currentTrack.artist.id}`
-            : null;
-        mediaLink = albumLink;
-    } else if (playbackType === "audiobook" && currentAudiobook) {
-        title = currentAudiobook.title;
-        subtitle = currentAudiobook.author;
-        coverUrl = currentAudiobook.coverUrl
-            ? api.getCoverArtUrl(currentAudiobook.coverUrl, 500)
-            : null;
-        mediaLink = `/audiobooks/${currentAudiobook.id}`;
-    } else if (playbackType === "podcast" && currentPodcast) {
-        title = currentPodcast.title;
-        subtitle = currentPodcast.podcastTitle;
-        coverUrl = currentPodcast.coverUrl
-            ? api.getCoverArtUrl(currentPodcast.coverUrl, 500)
-            : null;
-        const podcastId = currentPodcast.id.split(":")[0];
-        mediaLink = `/podcasts/${podcastId}`;
-    }
 
     return (
         <div

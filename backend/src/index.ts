@@ -45,7 +45,6 @@ import { requireAuth, requireAdmin } from "./middleware/auth";
 import {
     authLimiter,
     apiLimiter,
-    streamLimiter,
     imageLimiter,
 } from "./middleware/rateLimiter";
 import swaggerUi from "swagger-ui-express";
@@ -246,10 +245,32 @@ async function checkRedisConnection() {
     }
 }
 
+async function checkPasswordReset() {
+    const resetPassword = process.env.ADMIN_RESET_PASSWORD;
+    if (!resetPassword) return;
+
+    const bcrypt = await import("bcrypt");
+    const adminUser = await prisma.user.findFirst({ where: { role: "ADMIN" } });
+    if (!adminUser) {
+        logger.warn("[Password Reset] No admin user found");
+        return;
+    }
+
+    const hashedPassword = await bcrypt.hash(resetPassword, 10);
+    await prisma.user.update({
+        where: { id: adminUser.id },
+        data: { passwordHash: hashedPassword },
+    });
+    logger.warn("[Password Reset] Admin password has been reset via ADMIN_RESET_PASSWORD env var. Remove this env var and restart.");
+}
+
 app.listen(config.port, "0.0.0.0", async () => {
     // Verify database connections before proceeding
     await checkPostgresConnection();
     await checkRedisConnection();
+
+    // Check for admin password reset
+    await checkPasswordReset();
 
     logger.debug(
         `Lidify API running on port ${config.port} (accessible on all network interfaces)`

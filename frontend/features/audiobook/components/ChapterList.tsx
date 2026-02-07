@@ -1,9 +1,10 @@
 "use client";
 
 import { Card } from "@/components/ui/Card";
+import type { AudiobookChapter } from "../types";
 
 interface ChapterListProps {
-  chapters: any[];
+  chapters: AudiobookChapter[];
   onSeekToChapter: (startTime: number) => void;
   formatTime: (seconds: number) => string;
 }
@@ -23,7 +24,7 @@ export function ChapterList({
       <h2 className="text-2xl md:text-3xl font-bold mb-6">Chapters</h2>
       <Card className="p-6">
         <div className="space-y-2">
-          {chapters.map((chapter: any, index: number) => (
+          {chapters.map((chapter, index) => (
             <button
               key={chapter.id}
               onClick={() => onSeekToChapter(chapter.start)}

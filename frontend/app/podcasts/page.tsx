@@ -17,19 +17,6 @@ const getProxiedImageUrl = (imageUrl: string | undefined): string | null => {
     return api.getCoverArtUrl(imageUrl, 300);
 };
 
-interface Podcast {
-    id: string;
-    title: string;
-    author: string;
-    description?: string;
-    coverUrl: string;
-    autoDownloadEpisodes: boolean;
-    genres?: string[];
-    feedUrl?: string;
-    episodes?: any[];
-    episodeCount?: number;
-}
-
 interface SearchResult {
     type?: string;
     id: number;
@@ -52,7 +39,7 @@ export default function PodcastsPage() {
     const dropdownRef = useRef<HTMLDivElement>(null);
     const { isAuthenticated } = useAuth();
     const router = useRouter();
-    const { toast } = useToast();
+    useToast();
 
     // Use React Query hooks
     const { data: podcasts = [], isLoading: isLoadingPodcasts } =
@@ -149,7 +136,7 @@ export default function PodcastsPage() {
                 // Filter for podcasts from the results array
                 const podcastResults =
                     results?.results?.filter(
-                        (r: any) => r.type === "podcast"
+                        (r: { type: string }) => r.type === "podcast"
                     ) || [];
                 setSearchResults(podcastResults);
                 setShowDropdown(podcastResults.length > 0);
@@ -168,32 +155,6 @@ export default function PodcastsPage() {
             }
         };
     }, [searchQuery]);
-
-    const handleSubscribe = async (result: SearchResult | any) => {
-        try {
-            toast.info(`Subscribing to ${result.name || result.title}...`);
-
-            // For top/genre podcasts from RSS, we have itunesId but no feedUrl
-            // Pass itunesId and let backend look up the feedUrl
-            const itunesId =
-                result.itunesId?.toString() || result.id?.toString();
-            const response = await api.subscribePodcast(
-                result.feedUrl || "",
-                itunesId
-            );
-
-            if (response.success && response.podcast?.id) {
-                toast.success(`Subscribed to ${result.name || result.title}!`);
-                setSearchQuery("");
-                setShowDropdown(false);
-                // Navigate to new podcast (React Query will automatically refetch)
-                router.push(`/podcasts/${response.podcast.id}`);
-            }
-        } catch (error: any) {
-            console.error("Subscribe error:", error);
-            toast.error(error.message || "Failed to subscribe");
-        }
-    };
 
     if (isLoading) {
         return (
@@ -306,7 +267,7 @@ export default function PodcastsPage() {
                             searchQuery.length >= 2 && (
                                 <div className="absolute top-full left-0 mt-2 w-full bg-[#121212] border border-white/10 rounded-lg shadow-2xl p-4 z-50">
                                     <p className="text-gray-400 text-sm text-center">
-                                        No podcasts found for "{searchQuery}"
+                                        No podcasts found for &quot;{searchQuery}&quot;
                                     </p>
                                 </div>
                             )}

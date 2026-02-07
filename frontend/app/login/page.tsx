@@ -86,7 +86,7 @@ export default function LoginPage() {
                     );
                 }
                 // Silently ignore errors (expected when not authenticated)
-            } catch (err) {
+            } catch {
                 // Fail silently - login page will work without backgrounds
             }
         };

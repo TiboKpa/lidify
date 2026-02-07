@@ -76,11 +76,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
     // Cleanup all timeouts on unmount
     useEffect(() => {
+        const timeouts = timeoutsRef.current;
         return () => {
-            timeoutsRef.current.forEach((timeoutId) => {
+            timeouts.forEach((timeoutId) => {
                 clearTimeout(timeoutId);
             });
-            timeoutsRef.current.clear();
+            timeouts.clear();
         };
     }, []);
 

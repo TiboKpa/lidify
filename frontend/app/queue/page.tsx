@@ -10,7 +10,7 @@ import { useAudioState, useAudioControls } from "@/lib/audio-context";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/lib/toast-context";
 import { api } from "@/lib/api";
-import { cn } from "@/utils/cn";
+
 import {
     Music,
     Play,
@@ -25,8 +25,8 @@ import {
 export default function QueuePage() {
     const router = useRouter();
     const { isAuthenticated } = useAuth();
-    const { queue, currentTrack, currentIndex } = useAudioState();
-    const { playTracks, removeFromQueue } = useAudioControls();
+    const { queue, currentTrack, currentIndex, setQueue } = useAudioState();
+    const { playTracks, removeFromQueue, clearQueue } = useAudioControls();
     const { toast } = useToast();
 
     useEffect(() => {
@@ -36,8 +36,7 @@ export default function QueuePage() {
     }, [isAuthenticated, router]);
 
     const handleClearQueue = () => {
-        // Clear queue by playing an empty array
-        playTracks([], 0);
+        clearQueue();
         toast.success("Queue cleared");
     };
 
@@ -52,23 +51,27 @@ export default function QueuePage() {
     };
 
     const handleMoveUp = (index: number) => {
-        if (index <= currentIndex + 1) return; // Can't move past current track
-        const newQueue = [...queue];
-        [newQueue[index], newQueue[index - 1]] = [
-            newQueue[index - 1],
-            newQueue[index],
-        ];
-        playTracks(newQueue, currentIndex);
+        if (index <= currentIndex + 1) return;
+        setQueue((prev) => {
+            const newQueue = [...prev];
+            [newQueue[index], newQueue[index - 1]] = [
+                newQueue[index - 1],
+                newQueue[index],
+            ];
+            return newQueue;
+        });
     };
 
     const handleMoveDown = (index: number) => {
         if (index >= queue.length - 1 || index <= currentIndex) return;
-        const newQueue = [...queue];
-        [newQueue[index], newQueue[index + 1]] = [
-            newQueue[index + 1],
-            newQueue[index],
-        ];
-        playTracks(newQueue, currentIndex);
+        setQueue((prev) => {
+            const newQueue = [...prev];
+            [newQueue[index], newQueue[index + 1]] = [
+                newQueue[index + 1],
+                newQueue[index],
+            ];
+            return newQueue;
+        });
     };
 
     if (!isAuthenticated) {

@@ -3,13 +3,16 @@ import { Card } from "@/components/ui/Card";
 import { Play, Pause, Volume2, ListPlus, Plus } from "lucide-react";
 import { cn } from "@/utils/cn";
 import type { Track, Album, AlbumSource } from "../types";
+import type { ColorPalette } from "@/hooks/useImageColor";
+import { formatTime } from "@/utils/formatTime";
+import { formatNumber } from "@/utils/formatNumber";
 
 interface TrackListProps {
     tracks: Track[];
     album: Album;
     source: AlbumSource;
     currentTrackId: string | undefined;
-    colors: any;
+    colors: ColorPalette | null;
     onPlayTrack: (track: Track, index: number) => void;
     onAddToQueue: (track: Track) => void;
     onAddToPlaylist: (trackId: string) => void;
@@ -25,27 +28,14 @@ interface TrackRowProps {
     isOwned: boolean;
     isPlaying: boolean;
     isPreviewPlaying: boolean;
-    colors: any;
+    colors: ColorPalette | null;
     onPlayTrack: (track: Track, index: number) => void;
     onAddToQueue: (track: Track) => void;
     onAddToPlaylist: (trackId: string) => void;
     onPreview: (track: Track, e: React.MouseEvent) => void;
 }
 
-const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-};
 
-const formatNumber = (num: number) => {
-    if (num >= 1000000) {
-        return `${(num / 1000000).toFixed(1)}M`;
-    } else if (num >= 1000) {
-        return `${(num / 1000).toFixed(1)}K`;
-    }
-    return num.toString();
-};
 
 const TrackRow = memo(
     function TrackRow({
@@ -219,7 +209,7 @@ const TrackRow = memo(
 
                 {track.duration && (
                     <div className="text-xs md:text-sm text-gray-400 w-10 md:w-12 text-right tabular-nums">
-                        {formatDuration(track.duration)}
+                        {formatTime(track.duration)}
                     </div>
                 )}
             </div>

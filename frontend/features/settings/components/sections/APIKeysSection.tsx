@@ -29,6 +29,7 @@ export const APIKeysSection: React.FC = () => {
 
   useEffect(() => {
     loadApiKeys();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: API keys should only be loaded once on initial render
   }, []);
 
   const handleCreateApiKey = async () => {
@@ -124,7 +125,7 @@ export const APIKeysSection: React.FC = () => {
                 </Button>
               </div>
               <p className="text-xs text-yellow-200 mt-2">
-                Save this key now, you won't be able to see it again
+                Save this key now, you won&apos;t be able to see it again
               </p>
             </div>
           </div>

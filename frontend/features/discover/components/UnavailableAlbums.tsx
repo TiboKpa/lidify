@@ -63,7 +63,7 @@ export function UnavailableAlbums({
                 <>
                     <div className="px-6 pb-4">
                         <p className="text-sm text-gray-400">
-                            These albums were recommended but couldn't be found by your indexers.
+                            These albums were recommended but couldn&apos;t be found by your indexers.
                             Listen to 30-second previews below!
                         </p>
                     </div>

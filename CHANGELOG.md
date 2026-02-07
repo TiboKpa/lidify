@@ -5,6 +5,52 @@ All notable changes to Lidify will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-02-06
+
+### Fixed
+
+- **Doubled audio stream on next-track:** Fixed race condition where clicking next/previous played two streams simultaneously by making track-change cleanup synchronous and guarding the play/pause effect during loading
+- **Soulseek download returns 400 (#101):** Frontend now sends parsed title to the download endpoint; backend derives artist/title from filename when not provided instead of rejecting the request
+- **Admin password reset (#97):** Added `ADMIN_RESET_PASSWORD` environment variable support -- set it and restart to reset the admin password, then remove the variable
+- **Retry failed audio analysis UI (#79):** Added "Retry Failed Analysis" button in Settings that resets permanently failed tracks back to pending for re-processing
+- **Podcast auto-refresh (#81):** Podcasts now automatically refresh during the enrichment cycle (hourly), checking RSS feeds for new episodes without manual intervention
+- **Compilation track matching (#70):** Added title-only fallback matching strategy for playlist reconciliation -- when album artist doesn't match (e.g. "Various Artists" compilations), tracks are matched by title with artist similarity scoring
+- **Soulseek documentation (#27):** Expanded README with detailed Soulseek integration documentation covering setup, search, download workflow, and limitations
+- **Admin route hardening:** Added `requireAdmin` middleware to onboarding config routes and stale job cleanup endpoint
+- **2FA userId leak:** Removed userId from 2FA challenge response (information disclosure)
+- **Queue bugs:** Fixed cancelJob/refreshJobMatches not persisting state, clear button was no-op, reorder not restarting track, shuffle indices not updating on removeFromQueue
+- **Infinite re-render:** Fixed useAlbumData error handling causing infinite re-render loop
+- **2FA status not loading:** Fixed AccountSection not loading 2FA status on mount
+- **Password change error key mismatch:** Fixed error key mismatch in AccountSection password change handler
+- **Discovery polling leak:** Fixed polling never stopping on batch failure
+- **Timer leak:** Fixed withTimeout not clearing timer in enrichment worker
+- **Audio play rejection:** Fixed unhandled promise rejection on audio.play()
+- **Library tab validation:** Added tab parameter validation in library page
+- **Onboarding state:** Separated success/error state in onboarding page
+- **Audio analysis race condition (#79):** CLAP analyzer was clobbering Essentia's `analysisStatus` field, causing completed tracks to be reset and permanently failed after 3 cycles; both Python analyzers now check for existing embeddings before resetting
+- **Enrichment completion check:** `isFullyComplete` now includes CLAP vibe embeddings, not just audio analysis
+- **Enrichment UI resilience:** Added `keepPreviousData` and loading/error states to enrichment progress query so the settings block doesn't vanish on failed refetch
+
+### Performance
+
+- **Recommendation N+1 queries:** Eliminated N+1 queries in all 3 recommendation endpoints (60+ queries down to 3-5)
+- **Idle worker pool shutdown:** Essentia analyzer shuts down its 8-worker process pool (~5.6 GB) after idle period, lazily restarts when work arrives
+
+### Changed
+
+- **Shared utility consolidation:** Replaced 10 inline `formatDuration` copies with shared `formatTime`/`formatDuration`, extracted `formatNumber` to shared utility, consolidated inline Fisher-Yates shuffle with shared `shuffleArray`
+- **Player hook extraction:** Extracted shared `useMediaInfo` hook, eliminating ~120 lines of duplicated media info logic across MiniPlayer, FullPlayer, and OverlayPlayer
+- **Preview hook consolidation:** Consolidated artist/album preview hooks into shared `useTrackPreview`
+- **Redundant logging cleanup:** Removed console.error calls redundant with toast notifications or re-thrown errors
+
+### Removed
+
+- Dead player files: VibeOverlay, VibeGraph, VibeOverlayContainer, enhanced-vibe-test page
+- Dead code: trackEnrichment.ts, discover/types/index.ts, unused artist barrel file
+- Unused exports: `playTrack` from useLibraryActions, `useTrackDisplayData`/`TrackDisplayData` from useMetadataDisplay
+- Unused `streamLimiter` middleware
+- Deprecated `radiosByGenre` from browse API (Deezer radio requires account; internal library radio used instead)
+
 ## [1.4.0] - 2026-02-05
 
 ### Performance

@@ -1088,11 +1088,14 @@ def _analyze_track_in_process(args: Tuple[str, str]) -> Tuple[str, str, Dict[str
 class AnalysisWorker:
     """Worker that processes audio analysis jobs from Redis queue using parallel processing"""
     
+    IDLE_SHUTDOWN_CYCLES = 10  # Shut down pool after this many empty cycles (~50s at 5s interval)
+
     def __init__(self):
         self.redis = redis.from_url(REDIS_URL)
         self.db = DatabaseConnection(DATABASE_URL)
         self.running = False
         self.executor = None
+        self.pool_active = False
         self.consecutive_empty = 0
         self._tracks_since_refresh = 0  # Track count for periodic pool refresh
         self.is_paused = False  # Enrichment control: pause state
@@ -1197,63 +1200,115 @@ class AnalysisWorker:
         except Exception:
             return False
     
+    def _ensure_pool(self):
+        """Lazily start or verify the process pool is running."""
+        if self.pool_active and self.executor is not None:
+            return
+        if self.executor is not None:
+            # Stale executor reference, clean it up
+            try:
+                self.executor.shutdown(wait=False)
+            except Exception:
+                pass
+        logger.info(f"Starting worker pool with {NUM_WORKERS} processes...")
+        self.executor = ProcessPoolExecutor(
+            max_workers=NUM_WORKERS,
+            initializer=_init_worker_process
+        )
+        self.pool_active = True
+        self._tracks_since_refresh = 0
+        logger.info(f"Worker pool started ({NUM_WORKERS} workers)")
+
+    def _shutdown_pool(self):
+        """Shut down the process pool to free memory during idle periods."""
+        if not self.pool_active or self.executor is None:
+            return
+        logger.info("No pending work -- shutting down worker pool to free memory")
+        try:
+            self.executor.shutdown(wait=True)
+        except Exception as e:
+            logger.warning(f"Error during pool shutdown: {e}")
+        self.executor = None
+        self.pool_active = False
+        logger.info("Worker pool shut down (will restart when work arrives)")
+
     def _recreate_pool(self):
         """
         Safely terminate the broken pool and create a new one.
         This is the critical recovery mechanism for Issue #21.
         """
         logger.warning("Recreating process pool due to broken workers...")
-        
+
         # Attempt graceful shutdown first
         if self.executor:
             try:
-                # Python 3.8 compatibility: cancel_futures parameter added in 3.9
                 self.executor.shutdown(wait=False)
             except Exception as e:
                 logger.warning(f"Error during executor shutdown: {e}")
-        
+            self.executor = None
+            self.pool_active = False
+
         # Small delay to allow cleanup
         time.sleep(2)
-        
+
         # Create fresh pool
-        self.executor = ProcessPoolExecutor(
-            max_workers=NUM_WORKERS,
-            initializer=_init_worker_process
-        )
-        
-        # Reset track counter
-        self._tracks_since_refresh = 0
-        
+        self._ensure_pool()
         logger.info(f"Process pool recreated with {NUM_WORKERS} workers")
     
     def _cleanup_stale_processing(self):
-        """Reset tracks stuck in 'processing' status (from crashed workers)"""
+        """Reset tracks stuck in 'processing' status (from crashed workers).
+        Checks for existing embeddings first to avoid resetting completed work.
+        """
         cursor = self.db.get_cursor()
         try:
-            # Reset tracks that have been "processing" for too long
-            # Prefer analysisStartedAt if available, fallback to updatedAt
+            # First: recover tracks that have embeddings but are stuck in processing
             cursor.execute("""
-                UPDATE "Track"
+                UPDATE "Track" t
+                SET
+                    "analysisStatus" = 'completed',
+                    "analysisError" = NULL,
+                    "analysisStartedAt" = NULL
+                FROM track_embeddings te
+                WHERE t.id = te.track_id
+                AND t."analysisStatus" = 'processing'
+                AND (
+                    (t."analysisStartedAt" IS NOT NULL AND t."analysisStartedAt" < NOW() - INTERVAL '%s minutes')
+                    OR
+                    (t."analysisStartedAt" IS NULL AND t."updatedAt" < NOW() - INTERVAL '%s minutes')
+                )
+                RETURNING t.id
+            """, (STALE_PROCESSING_MINUTES, STALE_PROCESSING_MINUTES))
+
+            recovered_ids = cursor.fetchall()
+            recovered_count = len(recovered_ids)
+
+            if recovered_count > 0:
+                logger.info(f"Recovered {recovered_count} stale tracks that already had embeddings")
+
+            # Then: reset truly stale tracks (no embedding) back to pending
+            cursor.execute("""
+                UPDATE "Track" t
                 SET
                     "analysisStatus" = 'pending',
                     "analysisStartedAt" = NULL,
-                    "analysisRetryCount" = COALESCE("analysisRetryCount", 0) + 1
-                WHERE "analysisStatus" = 'processing'
+                    "analysisRetryCount" = COALESCE(t."analysisRetryCount", 0) + 1
+                WHERE t."analysisStatus" = 'processing'
                 AND (
-                    ("analysisStartedAt" IS NOT NULL AND "analysisStartedAt" < NOW() - INTERVAL '%s minutes')
+                    (t."analysisStartedAt" IS NOT NULL AND t."analysisStartedAt" < NOW() - INTERVAL '%s minutes')
                     OR
-                    ("analysisStartedAt" IS NULL AND "updatedAt" < NOW() - INTERVAL '%s minutes')
+                    (t."analysisStartedAt" IS NULL AND t."updatedAt" < NOW() - INTERVAL '%s minutes')
                 )
-                AND COALESCE("analysisRetryCount", 0) < %s
-                RETURNING id
+                AND COALESCE(t."analysisRetryCount", 0) < %s
+                AND NOT EXISTS (SELECT 1 FROM track_embeddings te WHERE te.track_id = t.id)
+                RETURNING t.id
             """, (STALE_PROCESSING_MINUTES, STALE_PROCESSING_MINUTES, MAX_RETRIES))
-            
+
             reset_ids = cursor.fetchall()
             reset_count = len(reset_ids)
-            
+
             if reset_count > 0:
                 logger.info(f"Reset {reset_count} stale 'processing' tracks back to 'pending'")
-            
+
             self.db.commit()
         except Exception as e:
             logger.error(f"Failed to cleanup stale tracks: {e}")
@@ -1262,17 +1317,38 @@ class AnalysisWorker:
             cursor.close()
     
     def _retry_failed_tracks(self):
-        """Retry failed tracks that haven't exceeded max retries"""
+        """Retry failed tracks that haven't exceeded max retries.
+        Recovers tracks that have embeddings but are incorrectly marked failed.
+        """
         cursor = self.db.get_cursor()
         try:
+            # First: recover tracks marked failed that actually have embeddings
             cursor.execute("""
-                UPDATE "Track"
-                SET 
+                UPDATE "Track" t
+                SET
+                    "analysisStatus" = 'completed',
+                    "analysisError" = NULL,
+                    "analysisStartedAt" = NULL
+                FROM track_embeddings te
+                WHERE t.id = te.track_id
+                AND t."analysisStatus" = 'failed'
+                RETURNING t.id
+            """)
+
+            recovered_ids = cursor.fetchall()
+            if len(recovered_ids) > 0:
+                logger.info(f"Recovered {len(recovered_ids)} 'failed' tracks that already had embeddings")
+
+            # Then: retry truly failed tracks (no embedding)
+            cursor.execute("""
+                UPDATE "Track" t
+                SET
                     "analysisStatus" = 'pending',
                     "analysisError" = NULL
-                WHERE "analysisStatus" = 'failed'
-                AND COALESCE("analysisRetryCount", 0) < %s
-                RETURNING id
+                WHERE t."analysisStatus" = 'failed'
+                AND COALESCE(t."analysisRetryCount", 0) < %s
+                AND NOT EXISTS (SELECT 1 FROM track_embeddings te WHERE te.track_id = t.id)
+                RETURNING t.id
             """, (MAX_RETRIES,))
             
             retry_ids = cursor.fetchall()
@@ -1330,11 +1406,7 @@ class AnalysisWorker:
         
         # Create process pool with initializer
         # Each worker process loads its own TensorFlow models
-        self.executor = ProcessPoolExecutor(
-            max_workers=NUM_WORKERS,
-            initializer=_init_worker_process
-        )
-        logger.info(f"Started {NUM_WORKERS} worker processes")
+        self._ensure_pool()
         
         try:
             while self.running:
@@ -1360,10 +1432,11 @@ class AnalysisWorker:
                     
                     if not has_work:
                         self.consecutive_empty += 1
-                        
-                        # After 10 consecutive empty batches, do cleanup and retry
-                        if self.consecutive_empty >= 10:
-                            logger.info("No pending tracks, running cleanup and retry cycle...")
+
+                        # After N consecutive empty batches, shut down pool and do cleanup
+                        if self.consecutive_empty >= self.IDLE_SHUTDOWN_CYCLES:
+                            self._shutdown_pool()
+                            logger.info("Running cleanup and retry cycle...")
                             self._cleanup_stale_processing()
                             self._retry_failed_tracks()
                             self.consecutive_empty = 0
@@ -1402,9 +1475,7 @@ class AnalysisWorker:
                     
                     time.sleep(SLEEP_INTERVAL)
         finally:
-            if self.executor:
-                self.executor.shutdown(wait=True)
-                logger.info("Worker processes shut down")
+            self._shutdown_pool()
             if self.pubsub:
                 self.pubsub.close()
                 logger.info("Control channel closed")
@@ -1464,7 +1535,8 @@ class AnalysisWorker:
         """Process multiple tracks in parallel using the process pool"""
         if not tracks:
             return
-        
+
+        self._ensure_pool()
         logger.info(f"Processing batch of {len(tracks)} tracks with {NUM_WORKERS} workers...")
         
         # Mark all as processing
@@ -1473,7 +1545,8 @@ class AnalysisWorker:
             track_ids = [t[0] for t in tracks]
             cursor.execute("""
                 UPDATE "Track"
-                SET "analysisStatus" = 'processing'
+                SET "analysisStatus" = 'processing',
+                    "analysisStartedAt" = NOW()
                 WHERE id = ANY(%s)
             """, (track_ids,))
             self.db.commit()
@@ -1546,6 +1619,7 @@ class AnalysisWorker:
                     "danceabilityMl" = %s,
                     "analysisMode" = %s,
                     "analysisStatus" = 'completed',
+                    "analysisStartedAt" = NULL,
                     "analysisVersion" = %s,
                     "analyzedAt" = %s,
                     "analysisError" = NULL

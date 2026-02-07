@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // Minimal health check script - no external dependencies
 const http = require('http');
 

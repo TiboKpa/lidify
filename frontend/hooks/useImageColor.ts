@@ -261,88 +261,71 @@ function rgbToHex(r: number, g: number, b: number): string {
     );
 }
 
+const PLACEHOLDER_PALETTE: ColorPalette = {
+    vibrant: "#1db954",
+    darkVibrant: "#121212",
+    lightVibrant: "#181818",
+    muted: "#535353",
+    darkMuted: "#121212",
+    lightMuted: "#b3b3b3",
+};
+
+function resolveSync(url: string | null | undefined): { colors: ColorPalette | null; needsAsync: boolean } {
+    if (!url) return { colors: null, needsAsync: false };
+    if (url.includes("placeholder") || url.startsWith("/placeholder")) {
+        return { colors: PLACEHOLDER_PALETTE, needsAsync: false };
+    }
+    if (typeof window !== "undefined") {
+        try {
+            const cached = localStorage.getItem(`color_cache_${url}`);
+            if (cached) return { colors: JSON.parse(cached) as ColorPalette, needsAsync: false };
+        } catch { /* ignore */ }
+    }
+    return { colors: null, needsAsync: true };
+}
+
 export function useImageColor(imageUrl: string | null | undefined) {
-    const [colors, setColors] = useState<ColorPalette | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
+    const initial = resolveSync(imageUrl);
+    const [colors, setColors] = useState<ColorPalette | null>(initial.colors);
+    const [isLoading, setIsLoading] = useState(initial.needsAsync);
 
+    // Render-time adjustment when imageUrl changes
+    const [prevUrl, setPrevUrl] = useState(imageUrl);
+    if (imageUrl !== prevUrl) {
+        setPrevUrl(imageUrl);
+        const resolved = resolveSync(imageUrl);
+        setColors(resolved.colors);
+        setIsLoading(resolved.needsAsync);
+    }
+
+    // Async extraction for cache misses
     useEffect(() => {
-        if (!imageUrl) {
-            setColors(null);
-            return;
-        }
+        if (!imageUrl) return;
+        if (imageUrl.includes("placeholder") || imageUrl.startsWith("/placeholder")) return;
 
-        // Handle placeholder images immediately
-        if (
-            imageUrl.includes("placeholder") ||
-            imageUrl.startsWith("/placeholder")
-        ) {
-            setColors({
-                vibrant: "#1db954",
-                darkVibrant: "#121212",
-                lightVibrant: "#181818",
-                muted: "#535353",
-                darkMuted: "#121212",
-                lightMuted: "#b3b3b3",
-            });
-            setIsLoading(false);
-            return;
-        }
-
-        // Check cache first
         const cacheKey = `color_cache_${imageUrl}`;
         try {
-            const cached = localStorage.getItem(cacheKey);
-            if (cached) {
-                const cachedPalette = JSON.parse(cached) as ColorPalette;
-                setColors(cachedPalette);
-                setIsLoading(false);
-                return;
-            }
-        } catch (error) {
-            // Ignore cache read errors
-        }
+            if (localStorage.getItem(cacheKey)) return;
+        } catch { /* ignore */ }
 
         let cancelled = false;
-        setIsLoading(true);
 
         extractColorsFromImage(imageUrl)
             .then((palette: ColorPalette) => {
                 if (cancelled) return;
-
                 setColors(palette);
                 setIsLoading(false);
-
-                try {
-                    localStorage.setItem(cacheKey, JSON.stringify(palette));
-                } catch (error) {
-                    // Ignore cache write errors
-                }
+                try { localStorage.setItem(cacheKey, JSON.stringify(palette)); } catch { /* ignore */ }
             })
             .catch((error) => {
                 if (cancelled) return;
-
                 console.error("[useImageColor] Failed to extract colors:", error.message || error);
-
-                setColors({
-                    vibrant: "#1db954",
-                    darkVibrant: "#121212",
-                    lightVibrant: "#181818",
-                    muted: "#535353",
-                    darkMuted: "#121212",
-                    lightMuted: "#b3b3b3",
-                });
+                setColors(PLACEHOLDER_PALETTE);
                 setIsLoading(false);
-
-                try {
-                    localStorage.removeItem(cacheKey);
-                } catch (e) {
-                    // Ignore
-                }
+                try { localStorage.removeItem(cacheKey); } catch { /* ignore */ }
             });
 
-        return () => {
-            cancelled = true;
-        };
+        return () => { cancelled = true; };
     }, [imageUrl]);
 
     return { colors, isLoading };

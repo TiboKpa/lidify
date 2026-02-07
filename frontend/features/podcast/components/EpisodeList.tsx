@@ -3,7 +3,8 @@
 import { Play, Pause, Check, ArrowUpDown, CheckCircle } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { Podcast, Episode } from "../types";
-import { formatDuration, formatDate } from "../utils";
+import { formatDuration } from "@/utils/formatTime";
+import { formatDate } from "../utils";
 
 interface EpisodeListProps {
     podcast: Podcast;
@@ -18,7 +19,7 @@ interface EpisodeListProps {
 }
 
 export function EpisodeList({
-    podcast,
+    podcast: _podcast,
     episodes,
     sortOrder,
     onSortOrderChange,

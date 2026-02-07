@@ -9,7 +9,6 @@ import { audioSeekEmitter } from "@/lib/audio-seek-emitter";
 import { dispatchQueryEvent } from "@/lib/query-events";
 import {
     playbackStateMachine,
-    operationLock,
     HeartbeatMonitor,
 } from "@/lib/audio";
 import {
@@ -107,7 +106,6 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
         canSeek,
         setCanSeek,
         setDownloadProgress,
-        lockSeek,
     } = useAudioPlayback();
 
     // Controls context
@@ -211,6 +209,87 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
             setDuration(0);
         }
     }, [currentTrack, currentAudiobook, currentPodcast, setDuration]);
+
+    // Save audiobook progress
+    const saveAudiobookProgress = useCallback(
+        async (isFinished: boolean = false) => {
+            if (!currentAudiobook) return;
+
+            const currentTime = howlerEngine.getCurrentTime();
+            const duration =
+                howlerEngine.getDuration() || currentAudiobook.duration;
+
+            if (currentTime === lastProgressSaveRef.current && !isFinished)
+                return;
+            lastProgressSaveRef.current = currentTime;
+
+            try {
+                await api.updateAudiobookProgress(
+                    currentAudiobook.id,
+                    isFinished ? duration : currentTime,
+                    duration,
+                    isFinished
+                );
+
+                setCurrentAudiobook({
+                    ...currentAudiobook,
+                    progress: {
+                        currentTime: isFinished ? duration : currentTime,
+                        progress:
+                            duration > 0
+                                ? ((isFinished ? duration : currentTime) /
+                                      duration) *
+                                  100
+                                : 0,
+                        isFinished,
+                        lastPlayedAt: new Date(),
+                    },
+                });
+
+                dispatchQueryEvent("audiobook-progress-updated");
+            } catch (err) {
+                console.error(
+                    "[HowlerAudioElement] Failed to save audiobook progress:",
+                    err
+                );
+            }
+        },
+        [currentAudiobook, setCurrentAudiobook]
+    );
+
+    // Save podcast progress
+    const savePodcastProgress = useCallback(
+        async (isFinished: boolean = false) => {
+            if (!currentPodcast) return;
+
+            if (isBuffering && !isFinished) return;
+
+            const currentTime = howlerEngine.getCurrentTime();
+            const duration =
+                howlerEngine.getDuration() || currentPodcast.duration;
+
+            if (currentTime <= 0 && !isFinished) return;
+
+            try {
+                const [podcastId, episodeId] = currentPodcast.id.split(":");
+                await api.updatePodcastProgress(
+                    podcastId,
+                    episodeId,
+                    isFinished ? duration : currentTime,
+                    duration,
+                    isFinished
+                );
+
+                dispatchQueryEvent("podcast-progress-updated");
+            } catch (err) {
+                console.error(
+                    "[HowlerAudioElement] Failed to save podcast progress:",
+                    err
+                );
+            }
+        },
+        [currentPodcast, isBuffering]
+    );
 
     // Subscribe to Howler events
     useEffect(() => {
@@ -338,88 +417,7 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
             howlerEngine.off("play", handlePlay);
             howlerEngine.off("pause", handlePause);
         };
-    }, [playbackType, currentTrack, currentAudiobook, currentPodcast, repeatMode, next, nextPodcastEpisode, pause, setCurrentTimeFromEngine, setDuration, setIsPlaying, queue, setCurrentTrack, setCurrentAudiobook, setCurrentPodcast, setPlaybackType]);
-
-    // Save audiobook progress
-    const saveAudiobookProgress = useCallback(
-        async (isFinished: boolean = false) => {
-            if (!currentAudiobook) return;
-
-            const currentTime = howlerEngine.getCurrentTime();
-            const duration =
-                howlerEngine.getDuration() || currentAudiobook.duration;
-
-            if (currentTime === lastProgressSaveRef.current && !isFinished)
-                return;
-            lastProgressSaveRef.current = currentTime;
-
-            try {
-                await api.updateAudiobookProgress(
-                    currentAudiobook.id,
-                    isFinished ? duration : currentTime,
-                    duration,
-                    isFinished
-                );
-
-                setCurrentAudiobook({
-                    ...currentAudiobook,
-                    progress: {
-                        currentTime: isFinished ? duration : currentTime,
-                        progress:
-                            duration > 0
-                                ? ((isFinished ? duration : currentTime) /
-                                      duration) *
-                                  100
-                                : 0,
-                        isFinished,
-                        lastPlayedAt: new Date(),
-                    },
-                });
-
-                dispatchQueryEvent("audiobook-progress-updated");
-            } catch (err) {
-                console.error(
-                    "[HowlerAudioElement] Failed to save audiobook progress:",
-                    err
-                );
-            }
-        },
-        [currentAudiobook, setCurrentAudiobook]
-    );
-
-    // Save podcast progress
-    const savePodcastProgress = useCallback(
-        async (isFinished: boolean = false) => {
-            if (!currentPodcast) return;
-
-            if (isBuffering && !isFinished) return;
-
-            const currentTime = howlerEngine.getCurrentTime();
-            const duration =
-                howlerEngine.getDuration() || currentPodcast.duration;
-
-            if (currentTime <= 0 && !isFinished) return;
-
-            try {
-                const [podcastId, episodeId] = currentPodcast.id.split(":");
-                await api.updatePodcastProgress(
-                    podcastId,
-                    episodeId,
-                    isFinished ? duration : currentTime,
-                    duration,
-                    isFinished
-                );
-
-                dispatchQueryEvent("podcast-progress-updated");
-            } catch (err) {
-                console.error(
-                    "[HowlerAudioElement] Failed to save podcast progress:",
-                    err
-                );
-            }
-        },
-        [currentPodcast, isBuffering]
-    );
+    }, [playbackType, currentTrack, currentAudiobook, currentPodcast, repeatMode, next, nextPodcastEpisode, pause, setCurrentTimeFromEngine, setDuration, setIsPlaying, setIsBuffering, queue, setCurrentTrack, setCurrentAudiobook, setCurrentPodcast, setPlaybackType, saveAudiobookProgress, savePodcastProgress]);
 
     // Load and play audio when track changes
     useEffect(() => {
@@ -579,6 +577,7 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
         } else {
             isLoadingRef.current = false;
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- canSeek/isPlaying/setIsPlaying intentionally excluded: adding them would re-trigger audio loading on play/pause or seek state changes, breaking playback
     }, [currentTrack, currentAudiobook, currentPodcast, playbackType, setDuration]);
 
     // Preload next track for gapless playback (music only)
@@ -710,11 +709,11 @@ export const HowlerAudioElement = memo(function HowlerAudioElement() {
     }, [isPlaying]);
 
     // Handle play/pause changes from UI
-    // Note: We intentionally don't guard against isLoadingRef here.
-    // Howler.js queues play() calls made before loading completes, which ensures
-    // the play command is issued from closer to the user gesture context.
-    // This fixes the "double-click to play" issue caused by browser autoplay policies.
+    // Skip if a track change is in progress -- the track-change effect handles playback.
+    // This prevents doubled audio when next() sets both currentTrack and isPlaying simultaneously.
     useEffect(() => {
+        if (isLoadingRef.current) return;
+
         isUserInitiatedRef.current = true;
 
         if (isPlaying) {

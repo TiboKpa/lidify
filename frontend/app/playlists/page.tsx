@@ -12,7 +12,7 @@ import { useAudioControls } from "@/lib/audio-context";
 import { Play, Music, Eye, EyeOff } from "lucide-react";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
 import { api } from "@/lib/api";
-import { cn, isLocalUrl } from "@/utils/cn";
+import { cn } from "@/utils/cn";
 
 // Lidify brand yellow
 const LIDIFY_YELLOW = "#ecb200";
@@ -240,8 +240,8 @@ function PlaylistCard({
 }
 
 export default function PlaylistsPage() {
-    const router = useRouter();
-    const { isAuthenticated } = useAuth();
+    useRouter();
+    useAuth();
     const { playTracks } = useAudioControls();
     const queryClient = useQueryClient();
     const [showHiddenTab, setShowHiddenTab] = useState(false);
@@ -286,7 +286,7 @@ export default function PlaylistsPage() {
         try {
             const playlist = await api.getPlaylist(playlistId);
             if (playlist?.items && playlist.items.length > 0) {
-                const tracks = playlist.items.map((item: any) => ({
+                const tracks = playlist.items.map((item: { track: { id: string; title: string; duration: number; album?: { id?: string; title?: string; coverArt?: string; artist?: { id?: string; name?: string } } } }) => ({
                     id: item.track.id,
                     title: item.track.title,
                     artist: {
@@ -397,7 +397,7 @@ export default function PlaylistsPage() {
                 {showHiddenTab && (
                     <div className="mx-2 mb-4 px-4 py-3 bg-white/5 rounded-lg">
                         <p className="text-sm text-gray-400">
-                            Hidden playlists won't appear in your library. Hover
+                            Hidden playlists won&apos;t appear in your library. Hover
                             and click the eye icon to restore.
                         </p>
                     </div>

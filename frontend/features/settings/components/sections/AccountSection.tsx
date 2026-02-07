@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SettingsSection, SettingsRow, SettingsInput } from "../ui";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { useTwoFactor } from "../../hooks/useTwoFactor";
 import { Modal } from "@/components/ui/Modal";
 import { InlineStatus, StatusType } from "@/components/ui/InlineStatus";
+import Image from "next/image";
 
 export function AccountSection() {
     const { user } = useAuth();
@@ -43,6 +44,11 @@ export function AccountSection() {
     const [tfaStatus, setTfaStatus] = useState<StatusType>("idle");
     const [tfaMessage, setTfaMessage] = useState("");
 
+    // Load 2FA status on mount
+    useEffect(() => {
+        load2FAStatus();
+    }, [load2FAStatus]);
+
     // Handle password change
     const handleChangePassword = async () => {
         if (!currentPassword || !newPassword || !confirmPassword) {
@@ -74,9 +80,9 @@ export function AccountSection() {
             setNewPassword("");
             setConfirmPassword("");
             setTimeout(() => setShowPasswordForm(false), 1500);
-        } catch (error: any) {
+        } catch (error: unknown) {
             setPasswordStatus("error");
-            setPasswordMessage(error.response?.data?.message || "Failed");
+            setPasswordMessage(error instanceof Error ? error.message : "Failed");
         } finally {
             setChangingPassword(false);
         }
@@ -90,9 +96,9 @@ export function AccountSection() {
             setTfaStatus("success");
             setTfaMessage("Enabled");
             setTwoFactorToken("");
-        } catch (error: any) {
+        } catch (error: unknown) {
             setTfaStatus("error");
-            setTfaMessage(error.message || "Invalid code");
+            setTfaMessage(error instanceof Error ? error.message : "Invalid code");
         }
     };
 
@@ -106,9 +112,9 @@ export function AccountSection() {
             setDisablePassword("");
             setDisableToken("");
             setShowDisableFlow(false);
-        } catch (error: any) {
+        } catch (error: unknown) {
             setTfaStatus("error");
-            setTfaMessage(error.message || "Failed");
+            setTfaMessage(error instanceof Error ? error.message : "Failed");
         }
     };
 
@@ -214,7 +220,7 @@ export function AccountSection() {
                         {twoFactorQR && (
                             <div className="flex justify-center">
                                 <div className="bg-white p-3 rounded-lg">
-                                    <img src={twoFactorQR} alt="2FA QR Code" className="w-40 h-40" />
+                                    <Image src={twoFactorQR} alt="2FA QR Code" width={160} height={160} className="w-40 h-40" unoptimized />
                                 </div>
                             </div>
                         )}

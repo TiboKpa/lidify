@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Disc3 } from "lucide-react";
+import Image from "next/image";
 import { api } from "@/lib/api";
 import { Album } from "../types";
 
@@ -19,16 +20,18 @@ export function LibraryAlbumsGrid({ albums }: LibraryAlbumsGridProps) {
                     tabIndex={0}
                 >
                     <div className="bg-[#121212] hover:bg-[#181818] transition-all p-4 rounded-lg group cursor-pointer">
-                        <div className="aspect-square bg-[#181818] rounded-md mb-4 flex items-center justify-center overflow-hidden">
+                        <div className="relative aspect-square bg-[#181818] rounded-md mb-4 flex items-center justify-center overflow-hidden">
                             {album.coverUrl || album.albumId ? (
-                                <img
+                                <Image
                                     src={api.getCoverArtUrl(
                                         album.coverUrl || album.albumId,
                                         200
                                     )}
                                     alt={album.title}
-                                    className="w-full h-full object-cover"
+                                    fill
+                                    className="object-cover"
                                     loading="lazy"
+                                    unoptimized
                                 />
                             ) : (
                                 <Disc3 className="w-12 h-12 text-gray-600" />

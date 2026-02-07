@@ -4,12 +4,15 @@ import { cn } from "@/utils/cn";
 import Image from "next/image";
 import { api } from "@/lib/api";
 import type { Track, Artist } from "../types";
+import type { ColorPalette } from "@/hooks/useImageColor";
+import { formatTime } from "@/utils/formatTime";
+import { formatNumber } from "@/utils/formatNumber";
 
 interface PopularTracksProps {
     tracks: Track[];
     artist: Artist;
     currentTrackId: string | undefined;
-    colors: any;
+    colors: ColorPalette | null;
     onPlayTrack: (track: Track) => void;
     previewTrack: string | null;
     previewPlaying: boolean;
@@ -20,26 +23,13 @@ export const PopularTracks: React.FC<PopularTracksProps> = ({
     tracks,
     artist,
     currentTrackId,
-    colors,
+    colors: _colors,
     onPlayTrack,
     previewTrack,
     previewPlaying,
     onPreview,
 }) => {
-    const formatDuration = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, "0")}`;
-    };
 
-    const formatNumber = (num: number) => {
-        if (num >= 1000000) {
-            return `${(num / 1000000).toFixed(1)}M`;
-        } else if (num >= 1000) {
-            return `${(num / 1000).toFixed(1)}K`;
-        }
-        return num.toString();
-    };
 
     return (
         <section>
@@ -167,7 +157,7 @@ export const PopularTracks: React.FC<PopularTracksProps> = ({
                                 )}
                                 {track.duration && (
                                     <span className="text-sm text-gray-400 w-10 text-right">
-                                        {formatDuration(track.duration)}
+                                        {formatTime(track.duration)}
                                     </span>
                                 )}
                             </div>

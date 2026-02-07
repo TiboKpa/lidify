@@ -2426,6 +2426,7 @@ class SpotifyImportService {
 
         job.tracksMatched += added;
         job.updatedAt = new Date();
+        await saveImportJob(job);
 
         logger?.debug(
             `[Spotify Import] Refresh job ${jobId}: added ${added} newly downloaded tracks`
@@ -2526,6 +2527,7 @@ class SpotifyImportService {
         // Mark job as cancelled - do NOT create a playlist
         job.status = "cancelled";
         job.updatedAt = new Date();
+        await saveImportJob(job);
         logger?.info(`Import cancelled by user - no playlist created`);
 
         return {
@@ -2812,6 +2814,45 @@ class SpotifyImportService {
                                 title: candidate.title,
                             };
                             break;
+                        }
+                    }
+                }
+
+                // Strategy 4: Title-only match with artist scoring (for compilations / Various Artists)
+                if (!localTrack) {
+                    logger?.debug(
+                        `      Strategy 4: Title-only match for "${strippedTitle}" (compilation fallback)`
+                    );
+                    const candidates = await prisma.track.findMany({
+                        where: {
+                            title: { equals: strippedTitle, mode: "insensitive" },
+                        },
+                        include: { album: { include: { artist: true } } },
+                        take: 10,
+                    });
+
+                    if (candidates.length > 0) {
+                        // Score by artist name similarity, pick best match
+                        const scored = candidates.map((c) => ({
+                            candidate: c,
+                            score: stringSimilarity(
+                                pendingTrack.spotifyArtist,
+                                c.album.artist.name
+                            ),
+                        }));
+                        scored.sort((a, b) => b.score - a.score);
+
+                        const best = scored[0];
+                        logger?.debug(
+                            `      Strategy 4: Best match "${best.candidate.title}" by ${best.candidate.album.artist.name} (artist score: ${best.score.toFixed(0)}%)`
+                        );
+
+                        // Accept if artist similarity is reasonable (>= 40%) or if there's only one candidate
+                        if (best.score >= 40 || candidates.length === 1) {
+                            localTrack = {
+                                id: best.candidate.id,
+                                title: best.candidate.title,
+                            };
                         }
                     }
                 }

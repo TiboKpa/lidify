@@ -57,9 +57,6 @@ export function DownloadNotifications() {
             // Get window and element dimensions
             const windowWidth = window.innerWidth;
             const windowHeight = window.innerHeight;
-            const elementWidth = containerRef.current?.offsetWidth || 384;
-            const elementHeight = containerRef.current?.offsetHeight || 400;
-
             // Starting position in viewport (bottom-24 = 96px from bottom, right-4 = 16px from right)
             const startRight = 16; // right-4 in Tailwind
             const startBottom = 96; // bottom-24 in Tailwind
@@ -98,14 +95,17 @@ export function DownloadNotifications() {
         downloadStatus.failedDownloads.length > 0 ||
         downloadStatus.recentDownloads.length > 0;
 
-    useEffect(() => {
+    // Render-time adjustment: sync open/dismissed state with shouldShow changes
+    const [prevShouldShow, setPrevShouldShow] = useState(shouldShow);
+    if (shouldShow !== prevShouldShow) {
+        setPrevShouldShow(shouldShow);
         if (shouldShow) {
             setIsOpen(true);
             setDismissed(false);
         } else {
             setIsOpen(false);
         }
-    }, [shouldShow]);
+    }
 
     const shouldRender = (shouldShow && !dismissed) || isOpen;
     if (!shouldRender) return null;
@@ -474,7 +474,6 @@ function DownloadJobItem({
 // Compact version for mobile
 function DownloadJobItemCompact({
     job,
-    onDelete,
 }: {
     job: DownloadJob;
     onDelete?: (id: string) => void;

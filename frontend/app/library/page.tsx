@@ -28,7 +28,9 @@ export default function LibraryPage() {
     const { playTracks } = useAudioControls();
 
     // Get active tab from URL params, default to "artists"
-    const activeTab = (searchParams.get("tab") as Tab) || "artists";
+    const validTabs: Tab[] = ["artists", "albums", "tracks"];
+    const tabParam = searchParams.get("tab");
+    const activeTab: Tab = validTabs.includes(tabParam as Tab) ? (tabParam as Tab) : "artists";
 
     // Read page from URL params
     const urlPage = parseInt(searchParams.get("page") || "1", 10);
@@ -101,8 +103,6 @@ export default function LibraryPage() {
         (activeTab === "albums" && albumsQuery.isLoading) ||
         (activeTab === "tracks" && tracksQuery.isLoading);
 
-    // Memoize the loading state to prevent unnecessary re-renders
-    const memoizedIsLoading = useMemo(() => isLoading, [isLoading]);
 
     // Scroll to top when page changes (after data loads)
     useEffect(() => {
@@ -441,7 +441,7 @@ export default function LibraryPage() {
                 {activeTab === "artists" && (
                     <ArtistsGrid
                         artists={artists}
-                        isLoading={memoizedIsLoading}
+                        isLoading={isLoading}
                         onPlay={playArtist}
                         onDelete={handleDeleteArtist}
                     />

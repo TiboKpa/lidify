@@ -344,9 +344,8 @@ router.get("/all", async (req, res) => {
 
         res.json({
             playlists: playlists.map(deezerPlaylistToUnified),
-            radios: [], // Radio stations are now internal (use /api/library/radio)
+            radios: [],
             genres,
-            radiosByGenre: [], // Deprecated - use internal radios
             source: "deezer",
         });
     } catch (error: any) {

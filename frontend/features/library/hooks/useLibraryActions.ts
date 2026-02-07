@@ -20,7 +20,7 @@ const formatTrackForAudio = (track: Track) => ({
 });
 
 export function useLibraryActions() {
-    const { playTrack, playTracks, addToQueue } = useAudioControls();
+    const { playTracks, addToQueue } = useAudioControls();
 
     const playArtist = useCallback(async (artistId: string) => {
         try {
@@ -38,7 +38,7 @@ export function useLibraryActions() {
                 return;
             }
 
-            const tracksWithAlbum = firstAlbum.tracks.map((track: any) => ({
+            const tracksWithAlbum = firstAlbum.tracks.map((track: Record<string, unknown>) => ({
                 ...track,
                 album: {
                     id: firstAlbum.id,
@@ -64,7 +64,7 @@ export function useLibraryActions() {
                 return;
             }
 
-            const tracksWithAlbum = album.tracks.map((track: any) => ({
+            const tracksWithAlbum = album.tracks.map((track: Record<string, unknown>) => ({
                 ...track,
                 album: {
                     id: album.id,
@@ -82,14 +82,6 @@ export function useLibraryActions() {
             console.error("Error playing album:", error);
         }
     }, [playTracks]);
-
-    const playTrackAction = useCallback((track: Track) => {
-        try {
-            playTrack(formatTrackForAudio(track));
-        } catch (error) {
-            console.error("Error playing track:", error);
-        }
-    }, [playTrack]);
 
     const addTrackToQueue = useCallback((track: Track) => {
         try {
@@ -111,7 +103,6 @@ export function useLibraryActions() {
         try {
             await api.deleteTrack(id);
         } catch (error) {
-            console.error("Error deleting track:", error);
             throw error;
         }
     }, []);
@@ -120,7 +111,6 @@ export function useLibraryActions() {
         try {
             await api.deleteAlbum(id);
         } catch (error) {
-            console.error("Error deleting album:", error);
             throw error;
         }
     }, []);
@@ -129,7 +119,6 @@ export function useLibraryActions() {
         try {
             await api.deleteArtist(id);
         } catch (error) {
-            console.error("Error deleting artist:", error);
             throw error;
         }
     }, []);
@@ -137,7 +126,6 @@ export function useLibraryActions() {
     return useMemo(() => ({
         playArtist,
         playAlbum,
-        playTrack: playTrackAction,
         addTrackToQueue,
         addTrackToPlaylist,
         deleteTrack,
@@ -146,7 +134,6 @@ export function useLibraryActions() {
     }), [
         playArtist,
         playAlbum,
-        playTrackAction,
         addTrackToQueue,
         addTrackToPlaylist,
         deleteTrack,

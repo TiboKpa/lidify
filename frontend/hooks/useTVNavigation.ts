@@ -32,9 +32,11 @@ export function useTVNavigation(options: UseTVNavigationOptions = {}): UseTVNavi
 
     // Store latest callbacks in refs to avoid stale closures
     const onBackRef = useRef(onBack);
-    onBackRef.current = onBack;
     const onSelectRef = useRef(onSelect);
-    onSelectRef.current = onSelect;
+    useEffect(() => {
+        onBackRef.current = onBack;
+        onSelectRef.current = onSelect;
+    });
 
     // Get all sections with data-tv-section attribute
     const getSections = useCallback(() => {

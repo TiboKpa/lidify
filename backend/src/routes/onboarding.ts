@@ -7,7 +7,7 @@ import axios from "axios";
 import crypto from "crypto";
 import { encryptField } from "../utils/systemSettings";
 import { writeEnvFile } from "../utils/envWriter";
-import { generateToken, requireAuth } from "../middleware/auth";
+import { generateToken, requireAuth, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 
@@ -164,7 +164,7 @@ router.post("/register", async (req, res) => {
  * POST /onboarding/lidarr
  * Step 2a: Configure Lidarr integration
  */
-router.post("/lidarr", requireAuth, async (req, res) => {
+router.post("/lidarr", requireAuth, requireAdmin, async (req, res) => {
     try {
         const config = lidarrConfigSchema.parse(req.body);
 
@@ -243,7 +243,7 @@ router.post("/lidarr", requireAuth, async (req, res) => {
  * POST /onboarding/audiobookshelf
  * Step 2b: Configure Audiobookshelf integration
  */
-router.post("/audiobookshelf", requireAuth, async (req, res) => {
+router.post("/audiobookshelf", requireAuth, requireAdmin, async (req, res) => {
     try {
         const config = audiobookshelfConfigSchema.parse(req.body);
 
@@ -319,7 +319,7 @@ router.post("/audiobookshelf", requireAuth, async (req, res) => {
  * POST /onboarding/soulseek
  * Step 2c: Configure Soulseek integration (direct connection via slsk-client)
  */
-router.post("/soulseek", requireAuth, async (req, res) => {
+router.post("/soulseek", requireAuth, requireAdmin, async (req, res) => {
     try {
         const config = soulseekConfigSchema.parse(req.body);
 
@@ -377,7 +377,7 @@ router.post("/soulseek", requireAuth, async (req, res) => {
  * POST /onboarding/enrichment
  * Step 3: Configure metadata enrichment
  */
-router.post("/enrichment", requireAuth, async (req, res) => {
+router.post("/enrichment", requireAuth, requireAdmin, async (req, res) => {
     try {
         const config = enrichmentConfigSchema.parse(req.body);
 

@@ -5,27 +5,18 @@ import { useState, useEffect, useCallback } from "react";
 const ACTIVITY_PANEL_KEY = "lidify_activity_panel_open";
 
 export function useActivityPanel() {
-    const [isOpen, setIsOpen] = useState(false);
+    const [isOpen, setIsOpen] = useState(() => {
+        if (typeof window === "undefined") return false;
+        return localStorage.getItem(ACTIVITY_PANEL_KEY) === "true";
+    });
     const [activeTab, setActiveTab] = useState<"notifications" | "active" | "history">("notifications");
-    const [isInitialized, setIsInitialized] = useState(false);
-
-    // Load state from localStorage on mount
-    useEffect(() => {
-        if (typeof window !== "undefined") {
-            const stored = localStorage.getItem(ACTIVITY_PANEL_KEY);
-            if (stored === "true") {
-                setIsOpen(true);
-            }
-            setIsInitialized(true);
-        }
-    }, []);
 
     // Persist state to localStorage
     useEffect(() => {
-        if (isInitialized && typeof window !== "undefined") {
+        if (typeof window !== "undefined") {
             localStorage.setItem(ACTIVITY_PANEL_KEY, isOpen ? "true" : "false");
         }
-    }, [isOpen, isInitialized]);
+    }, [isOpen]);
 
     const toggle = useCallback(() => {
         setIsOpen((prev) => !prev);
@@ -46,6 +37,5 @@ export function useActivityPanel() {
         toggle,
         open,
         close,
-        isInitialized,
     };
 }

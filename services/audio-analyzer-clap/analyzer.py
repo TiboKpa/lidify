@@ -410,17 +410,17 @@ class Worker:
             self._mark_failed(track_id, "Failed to store embedding")
 
     def _update_track_status(self, track_id: str, status: str):
-        """Update the track's analysis status"""
+        """Update the track's vibe analysis status (CLAP embeddings)"""
         cursor = self.db.get_cursor()
         try:
             cursor.execute("""
                 UPDATE "Track"
-                SET "analysisStatus" = %s
+                SET "vibeAnalysisStatus" = %s
                 WHERE id = %s
             """, (status, track_id))
             self.db.commit()
         except Exception as e:
-            logger.error(f"Failed to update track status: {e}")
+            logger.error(f"Failed to update track vibe status: {e}")
             self.db.rollback()
         finally:
             cursor.close()

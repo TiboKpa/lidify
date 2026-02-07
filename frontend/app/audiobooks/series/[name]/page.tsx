@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { api } from "@/lib/api";
+import { formatDuration } from "@/utils/formatTime";
 import { useAuth } from "@/lib/auth-context";
 import { useAudioState, useAudioPlayback, useAudioControls } from "@/lib/audio-context";
 import { useToast } from "@/lib/toast-context";
@@ -56,32 +57,24 @@ export default function SeriesDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        loadSeries();
-    }, [seriesName, isAuthenticated]);
-
-    const loadSeries = async () => {
         if (!isAuthenticated) return;
 
-        setIsLoading(true);
-        try {
-            const data = await api.getAudiobookSeries(seriesName);
-            setBooks(Array.isArray(data) ? data : []);
-        } catch (error: any) {
-            console.error("Failed to load series:", error);
-            toast.error("Failed to load series");
-        } finally {
-            setIsLoading(false);
-        }
-    };
+        const loadSeries = async () => {
+            setIsLoading(true);
+            try {
+                const data = await api.getAudiobookSeries(seriesName);
+                setBooks(Array.isArray(data) ? data : []);
+            } catch (error: unknown) {
+                console.error("Failed to load series:", error);
+                toast.error("Failed to load series");
+            } finally {
+                setIsLoading(false);
+            }
+        };
 
-    const formatDuration = (seconds: number) => {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        if (hours > 0) {
-            return `${hours}h ${minutes}m`;
-        }
-        return `${minutes}m`;
-    };
+        loadSeries();
+    }, [seriesName, isAuthenticated, toast]);
+
 
     const getCoverUrl = (coverUrl: string | null, size = 300) => {
         if (!coverUrl) return null;
@@ -285,7 +278,7 @@ export default function SeriesDetailPage() {
                                         }
                                         onClick={() => {
                                             if (isCurrentBook) {
-                                                isPlaying ? pause() : resume();
+                                                if (isPlaying) { pause(); } else { resume(); }
                                             } else {
                                                 playAudiobook(book);
                                             }

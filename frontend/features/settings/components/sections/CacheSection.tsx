@@ -6,7 +6,12 @@ import { SystemSettings } from "../../types";
 import { api } from "@/lib/api";
 import { enrichmentApi } from "@/lib/enrichmentApi";
 import { useFeatures } from "@/lib/features-context";
-import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
+import {
+    useQueryClient,
+    useQuery,
+    useMutation,
+    keepPreviousData,
+} from "@tanstack/react-query";
 import {
     CheckCircle,
     Loader2,
@@ -145,6 +150,8 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
     const [resettingMoodTags, setResettingMoodTags] = useState(false);
     const [resettingAudio, setResettingAudio] = useState(false);
     const [resettingVibe, setResettingVibe] = useState(false);
+    const [retryingFailed, setRetryingFailed] = useState(false);
+    const [retryResult, setRetryResult] = useState<{ reset: number } | null>(null);
     const [cleanupResult, setCleanupResult] = useState<{
         totalCleaned: number;
         cleaned: {
@@ -167,11 +174,18 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
     }, []);
 
     // Fetch enrichment progress
-    const { data: enrichmentProgress, refetch: refetchProgress } = useQuery({
+    const {
+        data: enrichmentProgress,
+        refetch: refetchProgress,
+        isPending: isProgressPending,
+        isError: isProgressError,
+    } = useQuery({
         queryKey: ["enrichment-progress"],
         queryFn: () => api.getEnrichmentProgress(),
-        refetchInterval: 5000, // Refresh every 5 seconds
+        refetchInterval: 5000,
         staleTime: 2000,
+        placeholderData: keepPreviousData,
+        retry: 3,
     });
 
     // Fetch enrichment state
@@ -456,7 +470,7 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
         try {
             await api.clearAllCaches();
             refreshNotifications();
-        } catch (err) {
+        } catch {
             setError("Failed to clear caches");
         } finally {
             setClearingCaches(false);
@@ -476,6 +490,22 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
             setError("Failed to cleanup stale jobs");
         } finally {
             setCleaningStaleJobs(false);
+        }
+    };
+
+    const handleRetryFailedAnalysis = async () => {
+        setRetryingFailed(true);
+        setRetryResult(null);
+        setError(null);
+        try {
+            const result = await api.retryFailedAnalysis();
+            setRetryResult({ reset: result.reset });
+            refetchProgress();
+        } catch (err) {
+            console.error("Retry failed analysis error:", err);
+            setError("Failed to retry analysis");
+        } finally {
+            setRetryingFailed(false);
         }
     };
 
@@ -521,7 +551,22 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
         <>
             <SettingsSection id="cache" title="Cache & Automation">
                 {/* Enrichment Progress */}
-                {enrichmentProgress && (
+                {isProgressPending ? (
+                    <div className="mb-6 p-4 bg-white/5 rounded-lg border border-white/10 flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin text-white/40" />
+                        <span className="text-sm text-white/40">Loading enrichment status...</span>
+                    </div>
+                ) : isProgressError && !enrichmentProgress ? (
+                    <div className="mb-6 p-4 bg-white/5 rounded-lg border border-red-500/20 flex items-center justify-between">
+                        <span className="text-sm text-red-400">Failed to load enrichment status</span>
+                        <button
+                            onClick={() => refetchProgress()}
+                            className="px-3 py-1 text-xs bg-white/10 text-white/70 rounded-full hover:bg-white/15 transition-colors"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                ) : enrichmentProgress ? (
                     <div className="mb-6 p-4 bg-white/5 rounded-lg border border-white/10">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-sm font-medium text-white">
@@ -794,7 +839,7 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                                 </div>
                             )}
                     </div>
-                )}
+                ) : null}
 
                 {/* Cache Sizes */}
                 <SettingsRow
@@ -1046,6 +1091,23 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                             ? "Cleaning..."
                             : "Cleanup Stale Jobs"}
                     </button>
+                    {enrichmentProgress?.audioAnalysis?.failed > 0 && (
+                        <button
+                            onClick={handleRetryFailedAnalysis}
+                            disabled={retryingFailed || isEnrichmentActive}
+                            className="px-4 py-1.5 text-sm bg-[#333] text-white rounded-full w-fit
+                            hover:bg-[#404040] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            {retryingFailed
+                                ? "Retrying..."
+                                : `Retry Failed Analysis (${enrichmentProgress.audioAnalysis.failed})`}
+                        </button>
+                    )}
+                    {retryResult && (
+                        <p className="text-sm text-green-400">
+                            Reset {retryResult.reset} failed tracks to pending
+                        </p>
+                    )}
                     {cleanupResult && cleanupResult.totalCleaned > 0 && (
                         <p className="text-sm text-green-400">
                             Cleaned:{" "}

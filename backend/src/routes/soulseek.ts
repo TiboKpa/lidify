@@ -232,6 +232,13 @@ router.get("/search/:searchId", requireAuth, async (req, res) => {
                     pathParts[pathParts.length - 2]
                 :   undefined;
 
+            // Extract title from filename: strip extension, track number prefix, and leading dash/space
+            const nameWithoutExt = filename.replace(/\.[^.]+$/, "");
+            const parsedTitle = nameWithoutExt
+                .replace(/^\d+[\s.\-_]*/, "") // Remove leading track number
+                .replace(/^\s*-\s*/, "") // Remove leading dash
+                .trim() || undefined;
+
             return {
                 username: r.user,
                 path: r.file,
@@ -241,6 +248,7 @@ router.get("/search/:searchId", requireAuth, async (req, res) => {
                 format,
                 parsedArtist,
                 parsedAlbum,
+                parsedTitle,
             };
         });
 
@@ -267,12 +275,22 @@ router.post(
     requireSoulseekConfigured,
     async (req, res) => {
         try {
-            const { artist, title, album } = req.body;
+            const { artist, title, album, filepath, filename } = req.body;
 
-            if (!artist || !title) {
-                return res.status(400).json({
-                    error: "Artist and title are required",
-                });
+            // Derive artist/title from filename if not provided
+            let resolvedArtist = artist;
+            let resolvedTitle = title;
+
+            if (!resolvedArtist || !resolvedTitle) {
+                // Try to extract from filename (strip extension and track number)
+                const name = (filename || filepath?.split(/[/\\]/).pop() || "")
+                    .replace(/\.[^.]+$/, "")
+                    .replace(/^\d+[\s.\-_]*/, "")
+                    .trim();
+
+                if (!resolvedTitle) resolvedTitle = name || "Unknown";
+                if (!resolvedArtist) resolvedArtist = "Unknown";
+                logger.warn(`[Soulseek] Derived artist/title from filename: "${resolvedArtist}" - "${resolvedTitle}"`);
             }
 
             const settings = await getSystemSettings();
@@ -284,11 +302,11 @@ router.post(
                 });
             }
 
-            logger.debug(`[Soulseek] Downloading: "${artist} - ${title}"`);
+            logger.debug(`[Soulseek] Downloading: "${resolvedArtist} - ${resolvedTitle}"`);
 
             const result = await soulseekService.searchAndDownload(
-                artist,
-                title,
+                resolvedArtist,
+                resolvedTitle,
                 album || "Unknown Album",
                 musicPath,
             );

@@ -41,8 +41,8 @@ export default function ReleasesPage() {
             if (!res.ok) throw new Error("Failed to fetch releases");
             const json = await res.json();
             setData(json);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed to fetch releases");
         } finally {
             setLoading(false);
         }

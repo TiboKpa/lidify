@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { usePodcastQuery } from "@/hooks/useQueries";
 import { useAuth } from "@/lib/auth-context";
@@ -49,20 +49,43 @@ export function usePodcastData() {
 
   // Load similar podcasts when podcast data is available
   useEffect(() => {
-    if (podcast && isAuthenticated) {
-      loadSimilarPodcasts();
+    if (!podcast || !isAuthenticated) return;
+
+    async function loadSimilarPodcasts() {
+      try {
+        const similar = await api.getSimilarPodcasts(podcastId);
+        setSimilarPodcasts(similar);
+      } catch (error) {
+        console.error("Failed to load similar podcasts:", error);
+      }
     }
-  }, [podcast?.id, isAuthenticated]);
+
+    loadSimilarPodcasts();
+  }, [podcast, isAuthenticated, podcastId]);
 
   // Handle preview mode if podcast is not subscribed
   useEffect(() => {
     if (isPodcastLoading) return;
+    if (podcast || !isAuthenticated || previewLoadState !== 'idle') return;
 
-    // If query returned no data, try preview mode
-    if (!podcast && isAuthenticated && previewLoadState === 'idle') {
-      loadPreviewData();
+    async function loadPreviewData() {
+      setPreviewLoadState('loading');
+      try {
+        const preview = await api.previewPodcast(podcastId);
+        setPreviewData(preview);
+        setPreviewLoadState('done');
+
+        if (preview.isSubscribed && preview.subscribedPodcastId) {
+          router.replace(`/podcasts/${preview.subscribedPodcastId}`);
+        }
+      } catch (error) {
+        console.error("Failed to load preview:", error);
+        setPreviewLoadState('error');
+      }
     }
-  }, [isPodcastLoading, podcast, isAuthenticated, podcastId, previewLoadState]);
+
+    loadPreviewData();
+  }, [isPodcastLoading, podcast, isAuthenticated, podcastId, previewLoadState, router]);
 
   // Save sort order to localStorage when it changes
   useEffect(() => {
@@ -73,32 +96,6 @@ export function usePodcastData() {
       );
     }
   }, [sortOrder, podcastId]);
-
-  async function loadSimilarPodcasts() {
-    try {
-      const similar = await api.getSimilarPodcasts(podcastId);
-      setSimilarPodcasts(similar);
-    } catch (error) {
-      console.error("Failed to load similar podcasts:", error);
-    }
-  }
-
-  async function loadPreviewData() {
-    setPreviewLoadState('loading');
-    try {
-      const preview = await api.previewPodcast(podcastId);
-      setPreviewData(preview);
-      setPreviewLoadState('done');
-
-      // If already subscribed, redirect
-      if (preview.isSubscribed && preview.subscribedPodcastId) {
-        router.replace(`/podcasts/${preview.subscribedPodcastId}`);
-      }
-    } catch (error) {
-      console.error("Failed to load preview:", error);
-      setPreviewLoadState('error');
-    }
-  }
 
   // Computed values
   const displayData = podcast || (previewData ? {

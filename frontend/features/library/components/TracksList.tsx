@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, memo, useCallback, useMemo } from "react";
+import { useState, memo, useCallback } from "react";
 import { Track } from "../types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PlaylistSelector } from "@/components/ui/PlaylistSelector";
@@ -8,6 +8,7 @@ import { GradientSpinner } from "@/components/ui/GradientSpinner";
 import { CachedImage } from "@/components/ui/CachedImage";
 import { AudioLines, ListPlus, Plus, Trash2, Play } from "lucide-react";
 import { cn } from "@/utils/cn";
+import { formatTime } from "@/utils/formatTime";
 import { api } from "@/lib/api";
 import { useAudioState } from "@/lib/audio-state-context";
 
@@ -20,11 +21,6 @@ interface TracksListProps {
     isLoading?: boolean;
 }
 
-const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-};
 
 interface TrackRowProps {
     track: Track;
@@ -148,7 +144,7 @@ const TrackRow = memo(
                         <Trash2 className="w-4 h-4" />
                     </button>
                     <span className="text-xs text-gray-500 w-10 text-right">
-                        {formatDuration(track.duration)}
+                        {formatTime(track.duration)}
                     </span>
                 </div>
             </div>
