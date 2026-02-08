@@ -12,8 +12,9 @@ services:
       - lidify_data:/data
     environment:
       - TZ=Europe/Paris
-      - SESSION_SECRET=D8GKtsZqSj9i+t5rH7U3dhbTFsBxjY3NldVyprN4SkM=
-      - SETTINGS_ENCRYPTION_KEY=kIIwXcZly38JkGVjNrqf46R4JJ6GlEYXqg1pD/N65Pk=
+      # Les valeurs sont définies dans Portainer (section Environment variables)
+      - SESSION_SECRET=${SESSION_SECRET}
+      - SETTINGS_ENCRYPTION_KEY=${SETTINGS_ENCRYPTION_KEY}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
