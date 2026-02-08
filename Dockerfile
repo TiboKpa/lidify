@@ -42,6 +42,7 @@ RUN apt-get install -y --no-install-recommends \
     cmake \
     wget \
     tar \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create directories
@@ -55,8 +56,10 @@ RUN mkdir -p /app/backend /app/frontend /app/audio-analyzer /app/models \
 WORKDIR /tmp
 
 # 1. Install TensorFlow C API (Required for building essentia-tensorflow)
-# Using the Official Google URL for 2.15.0 ARM64
-RUN wget -q https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-aarch64-2.15.0.tar.gz && \
+# Google does NOT provide official C-API binaries for Linux ARM64 (only x86).
+# We use a community-built binary (PINTO0309) which is the standard workaround.
+# This is TensorFlow 2.15.0 for aarch64
+RUN wget -q https://github.com/PINTO0309/Tensorflow-bin/releases/download/v2.15.0.post1/libtensorflow-cpu-linux-aarch64-2.15.0.tar.gz && \
     tar -C /usr/local -xzf libtensorflow-cpu-linux-aarch64-2.15.0.tar.gz && \
     ldconfig && \
     rm libtensorflow-cpu-linux-aarch64-2.15.0.tar.gz
@@ -76,9 +79,10 @@ RUN git clone --depth 1 https://github.com/MTG/essentia.git . && \
 
 # 3. Install Python dependencies (including the TensorFlow python package to match C API)
 WORKDIR /app/audio-analyzer
+# Install tensorflow-aarch64 wheel which matches our C-API version
 RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip setuptools wheel && \
     pip3 install --no-cache-dir --break-system-packages \
-    'tensorflow==2.15.1' \
+    tensorflow-aarch64==2.15.0 \
     redis \
     psycopg2-binary \
     'numpy<2.0.0'
