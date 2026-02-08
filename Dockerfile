@@ -55,19 +55,19 @@ RUN mkdir -p /app/backend /app/frontend /app/audio-analyzer /app/models \
 WORKDIR /tmp
 
 # 1. Install TensorFlow C API (Required for building essentia-tensorflow)
-# We use the official ARM64 binary from Google
+# Using the Official Google URL for 2.15.0 ARM64
 RUN wget -q https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-aarch64-2.15.0.tar.gz && \
     tar -C /usr/local -xzf libtensorflow-cpu-linux-aarch64-2.15.0.tar.gz && \
     ldconfig && \
     rm libtensorflow-cpu-linux-aarch64-2.15.0.tar.gz
 
 # 2. Build Essentia from source with TensorFlow support
-# No pip wheel exists for ARM64, so we must compile it.
 WORKDIR /tmp/essentia-build
-RUN git clone https://github.com/MTG/essentia.git . && \
+# We use --depth 1 to speed up clone
+RUN git clone --depth 1 https://github.com/MTG/essentia.git . && \
     # Configure build with TensorFlow support
     python3 wscript --tensorflow --mode=release --with-examples --with-vamp && \
-    # Compile (this takes time)
+    # Compile
     python3 waf configure --tensorflow --mode=release --with-examples --with-vamp && \
     python3 waf && \
     python3 waf install && \
