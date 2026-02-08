@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-get update
 
 # Add heavy build dependencies for compiling Essentia & TensorFlow C API
+# FIX: Replaced libavresample-dev (deprecated) with libswresample-dev
 RUN apt-get install -y --no-install-recommends \
     postgresql-16 \
     postgresql-contrib-16 \
@@ -37,7 +38,6 @@ RUN apt-get install -y --no-install-recommends \
     libavcodec-dev \
     libavformat-dev \
     libavutil-dev \
-    libavresample-dev \
     libswresample-dev \
     cmake \
     wget \
