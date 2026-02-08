@@ -1,13 +1,14 @@
-# Lidify ARM64 Edition (No AI)
+# Lidify ARM64 Edition (Experimental AI Support)
 FROM node:20-slim
 
-# Install system dependencies
+# Install system dependencies including build tools for ARM64 compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg lsb-release curl ca-certificates && \
     echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg && \
     apt-get update
 
+# Add heavy build dependencies (hdf5, blas, etc) required for compiling TensorFlow/Essentia on ARM
 RUN apt-get install -y --no-install-recommends \
     postgresql-16 \
     postgresql-contrib-16 \
@@ -19,11 +20,76 @@ RUN apt-get install -y --no-install-recommends \
     openssl \
     bash \
     gosu \
+    # Python & Build Tools
+    python3 \
+    python3-pip \
+    python3-numpy \
+    build-essential \
+    python3-dev \
+    pkg-config \
+    libhdf5-dev \
+    libtbb-dev \
+    gfortran \
+    libopenblas-dev \
+    liblapack-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create directories
-RUN mkdir -p /app/backend /app/frontend /data/postgres /data/redis /run/postgresql /var/log/supervisor \
+RUN mkdir -p /app/backend /app/frontend /app/audio-analyzer /app/models \
+    /data/postgres /data/redis /run/postgresql /var/log/supervisor \
     && chown -R postgres:postgres /data/postgres /run/postgresql
+
+# ============================================
+# AUDIO ANALYZER SETUP (Essentia AI)
+# ============================================
+WORKDIR /app/audio-analyzer
+
+# 1. Install TensorFlow (Let pip find the best ARM64 binary)
+# 2. Install Essentia from specific ARM-friendly wheels or source if needed
+# We split this to debug easier.
+RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip setuptools wheel && \
+    pip3 install --no-cache-dir --break-system-packages 'tensorflow>=2.13.0,<2.16.0' && \
+    # Try installing essentia-tensorflow. If no wheel exists, the build-essential/hdf5 deps above allow compilation.
+    pip3 install --no-cache-dir --break-system-packages essentia-tensorflow redis psycopg2-binary
+
+# Download Essentia ML models
+RUN echo "Downloading Essentia ML models..." && \
+    curl -L --progress-bar -o /app/models/msd-musicnn-1.pb "https://essentia.upf.edu/models/autotagging/msd/msd-musicnn-1.pb" && \
+    curl -L --progress-bar -o /app/models/mood_happy-msd-musicnn-1.pb "https://essentia.upf.edu/models/classification-heads/mood_happy/mood_happy-msd-musicnn-1.pb" && \
+    curl -L --progress-bar -o /app/models/mood_sad-msd-musicnn-1.pb "https://essentia.upf.edu/models/classification-heads/mood_sad/mood_sad-msd-musicnn-1.pb" && \
+    curl -L --progress-bar -o /app/models/mood_relaxed-msd-musicnn-1.pb "https://essentia.upf.edu/models/classification-heads/mood_relaxed/mood_relaxed-msd-musicnn-1.pb" && \
+    curl -L --progress-bar -o /app/models/mood_aggressive-msd-musicnn-1.pb "https://essentia.upf.edu/models/classification-heads/mood_aggressive/mood_aggressive-msd-musicnn-1.pb" && \
+    curl -L --progress-bar -o /app/models/mood_party-msd-musicnn-1.pb "https://essentia.upf.edu/models/classification-heads/mood_party/mood_party-msd-musicnn-1.pb" && \
+    curl -L --progress-bar -o /app/models/mood_acoustic-msd-musicnn-1.pb "https://essentia.upf.edu/models/classification-heads/mood_acoustic/mood_acoustic-msd-musicnn-1.pb" && \
+    curl -L --progress-bar -o /app/models/mood_electronic-msd-musicnn-1.pb "https://essentia.upf.edu/models/classification-heads/mood_electronic/mood_electronic-msd-musicnn-1.pb" && \
+    curl -L --progress-bar -o /app/models/danceability-msd-musicnn-1.pb "https://essentia.upf.edu/models/classification-heads/danceability/danceability-msd-musicnn-1.pb" && \
+    curl -L --progress-bar -o /app/models/voice_instrumental-msd-musicnn-1.pb "https://essentia.upf.edu/models/classification-heads/voice_instrumental/voice_instrumental-msd-musicnn-1.pb"
+
+COPY services/audio-analyzer/analyzer.py /app/audio-analyzer/
+
+# ============================================
+# CLAP ANALYZER SETUP (Vibe Similarity)
+# ============================================
+WORKDIR /app/audio-analyzer-clap
+
+# CLAP needs torch. On ARM64, this takes FOREVER to compile if no wheel.
+# We trust PyTorch has wheels for aarch64 now.
+RUN pip3 install --no-cache-dir --break-system-packages \
+    'torch>=2.0.0' \
+    'torchaudio>=2.0.0' \
+    'torchvision>=0.15.0' \
+    'laion-clap>=1.1.4' \
+    'librosa>=0.10.0' \
+    'transformers>=4.30.0' \
+    'pgvector>=0.2.0' \
+    'python-dotenv>=1.0.0' \
+    'requests>=2.31.0'
+
+COPY services/audio-analyzer-clap/analyzer.py /app/audio-analyzer-clap/
+# Download CLAP model
+RUN echo "Downloading CLAP model..." && \
+    curl -L --progress-bar -o /app/models/music_audioset_epoch_15_esc_90.14.pt \
+        "https://huggingface.co/lukewys/laion_clap/resolve/main/music_audioset_epoch_15_esc_90.14.pt"
 
 # Create database readiness check script
 RUN cat > /app/wait-for-db.sh << 'EOF'
@@ -73,7 +139,7 @@ RUN npm run build
 WORKDIR /app
 COPY healthcheck-prod.js /app/healthcheck.js
 
-# Supervisor config (AI services removed)
+# Supervisor config (Full version with AI)
 RUN cat > /etc/supervisor/conf.d/lidify.conf << 'EOF'
 [supervisord]
 nodaemon=true
@@ -86,22 +152,22 @@ command=/usr/lib/postgresql/16/bin/postgres -D /data/postgres
 user=postgres
 autostart=true
 autorestart=true
-priority=10
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
+priority=10
 
 [program:redis]
 command=/usr/bin/redis-server --dir /data/redis --appendonly yes
 user=redis
 autostart=true
 autorestart=true
-priority=20
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
+priority=20
 
 [program:backend]
 command=/bin/bash -c "/app/wait-for-db.sh 120 && cd /app/backend && node dist/index.js"
@@ -122,6 +188,32 @@ stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
+
+[program:audio-analyzer]
+command=/bin/bash -c "/app/wait-for-db.sh 120 && cd /app/audio-analyzer && python3 analyzer.py"
+autostart=true
+autorestart=unexpected
+startretries=3
+startsecs=10
+environment=DATABASE_URL="postgresql://lidify:lidify@localhost:5432/lidify",REDIS_URL="redis://localhost:6379",MUSIC_PATH="/music",BATCH_SIZE="10",SLEEP_INTERVAL="5",MAX_ANALYZE_SECONDS="90",BRPOP_TIMEOUT="30",MODEL_IDLE_TIMEOUT="300",NUM_WORKERS="2",THREADS_PER_WORKER="1",CUDA_VISIBLE_DEVICES=""
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+priority=50
+
+[program:audio-analyzer-clap]
+command=/bin/bash -c "/app/wait-for-db.sh 120 && cd /app/audio-analyzer-clap && python3 analyzer.py"
+autostart=true
+autorestart=unexpected
+startretries=3
+startsecs=30
+environment=DATABASE_URL="postgresql://lidify:lidify@localhost:5432/lidify",REDIS_URL="redis://localhost:6379",MUSIC_PATH="/music",BACKEND_URL="http://localhost:3006",SLEEP_INTERVAL="5",NUM_WORKERS="1",MODEL_IDLE_TIMEOUT="300",INTERNAL_API_SECRET="lidify-internal-aio"
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+priority=60
 EOF
 
 # Startup Script
