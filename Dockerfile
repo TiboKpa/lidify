@@ -1,14 +1,16 @@
-# Lidify ARM64 Edition (Experimental AI Support)
+# Lidify ARM64 Edition (Source Build for AI)
+# This version BUILDS Essentia from source because no PyPI wheels exist for ARM64.
+# It will take 30-60 minutes to build.
 FROM node:20-slim
 
 # Install system dependencies including build tools for ARM64 compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gnupg lsb-release curl ca-certificates && \
+    gnupg lsb-release curl ca-certificates git && \
     echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg && \
     apt-get update
 
-# Add heavy build dependencies (hdf5, blas, etc) required for compiling TensorFlow/Essentia on ARM
+# Add heavy build dependencies for compiling Essentia & TensorFlow C API
 RUN apt-get install -y --no-install-recommends \
     postgresql-16 \
     postgresql-contrib-16 \
@@ -20,18 +22,26 @@ RUN apt-get install -y --no-install-recommends \
     openssl \
     bash \
     gosu \
-    # Python & Build Tools
-    python3 \
-    python3-pip \
-    python3-numpy \
+    # Build Tools for Essentia
     build-essential \
     python3-dev \
+    python3-pip \
+    python3-numpy \
     pkg-config \
     libhdf5-dev \
-    libtbb-dev \
-    gfortran \
-    libopenblas-dev \
-    liblapack-dev \
+    libfftw3-dev \
+    libyaml-dev \
+    libsamplerate0-dev \
+    libtag1-dev \
+    libchromaprint-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libavutil-dev \
+    libavresample-dev \
+    libswresample-dev \
+    cmake \
+    wget \
+    tar \
     && rm -rf /var/lib/apt/lists/*
 
 # Create directories
@@ -40,17 +50,38 @@ RUN mkdir -p /app/backend /app/frontend /app/audio-analyzer /app/models \
     && chown -R postgres:postgres /data/postgres /run/postgresql
 
 # ============================================
-# AUDIO ANALYZER SETUP (Essentia AI)
+# TENSORFLOW C API & ESSENTIA BUILD
 # ============================================
-WORKDIR /app/audio-analyzer
+WORKDIR /tmp
 
-# 1. Install TensorFlow (Let pip find the best ARM64 binary)
-# 2. Install Essentia from specific ARM-friendly wheels or source if needed
-# We split this to debug easier.
+# 1. Install TensorFlow C API (Required for building essentia-tensorflow)
+# We use the official ARM64 binary from Google
+RUN wget -q https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-aarch64-2.15.0.tar.gz && \
+    tar -C /usr/local -xzf libtensorflow-cpu-linux-aarch64-2.15.0.tar.gz && \
+    ldconfig && \
+    rm libtensorflow-cpu-linux-aarch64-2.15.0.tar.gz
+
+# 2. Build Essentia from source with TensorFlow support
+# No pip wheel exists for ARM64, so we must compile it.
+WORKDIR /tmp/essentia-build
+RUN git clone https://github.com/MTG/essentia.git . && \
+    # Configure build with TensorFlow support
+    python3 wscript --tensorflow --mode=release --with-examples --with-vamp && \
+    # Compile (this takes time)
+    python3 waf configure --tensorflow --mode=release --with-examples --with-vamp && \
+    python3 waf && \
+    python3 waf install && \
+    # Clean up build artifacts to save space
+    cd / && rm -rf /tmp/essentia-build
+
+# 3. Install Python dependencies (including the TensorFlow python package to match C API)
+WORKDIR /app/audio-analyzer
 RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip setuptools wheel && \
-    pip3 install --no-cache-dir --break-system-packages 'tensorflow>=2.13.0,<2.16.0' && \
-    # Try installing essentia-tensorflow. If no wheel exists, the build-essential/hdf5 deps above allow compilation.
-    pip3 install --no-cache-dir --break-system-packages essentia-tensorflow redis psycopg2-binary
+    pip3 install --no-cache-dir --break-system-packages \
+    'tensorflow==2.15.1' \
+    redis \
+    psycopg2-binary \
+    'numpy<2.0.0'
 
 # Download Essentia ML models
 RUN echo "Downloading Essentia ML models..." && \
@@ -72,8 +103,7 @@ COPY services/audio-analyzer/analyzer.py /app/audio-analyzer/
 # ============================================
 WORKDIR /app/audio-analyzer-clap
 
-# CLAP needs torch. On ARM64, this takes FOREVER to compile if no wheel.
-# We trust PyTorch has wheels for aarch64 now.
+# CLAP dependencies
 RUN pip3 install --no-cache-dir --break-system-packages \
     'torch>=2.0.0' \
     'torchaudio>=2.0.0' \
@@ -86,7 +116,6 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     'requests>=2.31.0'
 
 COPY services/audio-analyzer-clap/analyzer.py /app/audio-analyzer-clap/
-# Download CLAP model
 RUN echo "Downloading CLAP model..." && \
     curl -L --progress-bar -o /app/models/music_audioset_epoch_15_esc_90.14.pt \
         "https://huggingface.co/lukewys/laion_clap/resolve/main/music_audioset_epoch_15_esc_90.14.pt"
